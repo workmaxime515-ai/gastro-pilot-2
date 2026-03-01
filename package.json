@@ -1,0 +1,49 @@
+{
+  "name": "coffeeflow",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "node scripts/generate-icons.js && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@prisma/adapter-better-sqlite3": "^7.4.0",
+    "@prisma/client": "^7.4.0",
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^25.2.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "autoprefixer": "^10.4.24",
+    "better-sqlite3": "^12.6.2",
+    "csv-stringify": "^6.6.0",
+    "dotenv": "^17.3.1",
+    "framer-motion": "^12.34.0",
+    "jspdf": "^4.1.0",
+    "lucide-react": "^0.563.0",
+    "next": "^16.1.6",
+    "postcss": "^8.5.6",
+    "prisma": "^7.4.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.2",
+    "eslint-config-next": "^16.1.6",
+    "sharp": "^0.34.5",
+    "tsx": "^4.21.0",
+    "vitest": "^4.0.18"
+  }
+}

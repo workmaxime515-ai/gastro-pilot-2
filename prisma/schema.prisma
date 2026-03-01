@@ -1,0 +1,631 @@
+generator client {
+  provider = "prisma-client"
+  output   = "./generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ─── Products ────────────────────────────────────────────────
+
+model Product {
+  id            String   @id @default(cuid())
+  name          String
+  category      String   // coffee, bakery, lunch, drinks, other
+  costPrice     Float    // Einkaufspreis
+  sellPrice     Float    // Verkaufspreis
+  spoilageHours Int      @default(72) // Haltbarkeit in Stunden
+  isActive      Boolean  @default(true)
+  isSeasonal    Boolean  @default(false)
+  seasonMonths  String?  // JSON array of months, e.g. "[6,7,8]"
+  allergens     String?  // JSON array: ["gluten", "laktose", ...]
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  dailySales    DailySales[]
+  inventory     Inventory[]
+  wasteLog      WasteLog[]
+}
+
+
+// ─── Sales & Revenue ─────────────────────────────────────────
+
+model DailySales {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  date      DateTime
+  quantity  Int
+  revenue   Float
+  timeSlot  String?  // morning, midday, afternoon, evening
+  createdAt DateTime @default(now())
+
+  @@index([date])
+  @@index([productId, date])
+}
+
+// ─── Inventory ───────────────────────────────────────────────
+
+model Inventory {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity    Float
+  unit        String    @default("pieces") // pieces, liters, kg
+  expiresAt   DateTime?
+  updatedAt   DateTime  @updatedAt
+  parLevel     Float?
+  maxLevel     Float?
+  reorderPoint Float?
+  autoDeduct   Boolean  @default(true)
+
+  @@index([productId])
+}
+
+// ─── Staff ───────────────────────────────────────────────────
+
+model StaffMember {
+  id           String   @id @default(cuid())
+  name         String
+  role         String   // barista, kitchen, allrounder, manager
+  startDate    DateTime @default(now())
+  isActive     Boolean  @default(true)
+  hourlyWage   Float    @default(0)
+  monthlyFixed Float    @default(0)
+
+  schedules    StaffSchedule[]
+  laborEntries LaborEntry[]
+}
+
+model StaffSchedule {
+  id        String      @id @default(cuid())
+  staffId   String
+  staff     StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date      DateTime
+  startTime String      // "06:00"
+  endTime   String      // "14:00"
+  role      String      // Rolle für diese Schicht
+
+  @@index([date])
+  @@index([staffId, date])
+}
+
+// ─── Events & Weather ────────────────────────────────────────
+
+model LocalEvent {
+  id             String   @id @default(cuid())
+  name           String
+  date           DateTime
+  expectedImpact String   @default("medium") // low, medium, high
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  @@index([date])
+}
+
+model WeatherData {
+  id          String   @id @default(cuid())
+  date        DateTime @unique
+  tempHigh    Float
+  tempLow     Float
+  condition   String   // sunny, cloudy, rainy, snowy, stormy
+  humidity    Int?
+  createdAt   DateTime @default(now())
+}
+
+// ─── Suggestions & Feedback ──────────────────────────────────
+
+model Suggestion {
+  id              String   @id @default(cuid())
+  date            DateTime
+  targetDate      DateTime? // Für Morgen-Planung
+  type            String   // demand, inventory, pricing, timing, risk, reverse, breakeven, tomorrow, waste, special, social, reorder, cost, rush
+  category        String   // profit, waste, stress, emergency, marketing
+  title           String
+  description     String
+  timing          String?
+  reasoning       String
+  expectedImpact  String   // JSON: { revenue?: number, waste?: number, stress?: string }
+  confidence      Int      // 0-100
+  riskLevel       String   @default("low") // low, medium, high
+  difficulty      String   @default("easy") // easy, medium, hard
+  inactionRisk    String?  // Was passiert ohne Aktion
+  isEmergency     Boolean  @default(false)
+  strategyMode    String   @default("balanced") // balanced, profit, waste, stress
+  score           Float    @default(0)
+  sortOrder       Int      @default(0)
+  actualImpact    String?  // JSON: { revenue?: number, waste?: number }
+  outcome         String?  // success, partial, failure
+  createdAt       DateTime @default(now())
+
+  actionTracking  ActionTracking?
+  feedback        SuggestionFeedback?
+
+  @@index([date])
+  @@index([date, strategyMode])
+}
+
+model ActionTracking {
+  id           String     @id @default(cuid())
+  suggestionId String     @unique
+  suggestion   Suggestion @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
+  status       String     // done, skipped, partial
+  completedAt  DateTime?
+  createdAt    DateTime   @default(now())
+}
+
+model SuggestionFeedback {
+  id           String     @id @default(cuid())
+  suggestionId String     @unique
+  suggestion   Suggestion @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
+  isHelpful    Boolean
+  comment      String?
+  createdAt    DateTime   @default(now())
+}
+
+// ─── Waste Tracking ──────────────────────────────────────────
+
+model WasteLog {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  date      DateTime
+  quantity  Int
+  reason    String?  // overproduction, expired, damaged, other
+  createdAt DateTime @default(now())
+
+  @@index([date])
+  @@index([productId, date])
+}
+
+// ─── Day Close ───────────────────────────────────────────────
+
+model DayClose {
+  id          String   @id @default(cuid())
+  date        DateTime @unique
+  totalRevenue Float
+  totalWaste   Float
+  dayRating    String?  // good, normal, weak
+  notes        String?
+  quickNote    String?  // Besondere Vorkommnisse
+  createdAt    DateTime @default(now())
+}
+
+// ─── Emergency ───────────────────────────────────────────────
+
+model EmergencyLog {
+  id               String   @id @default(cuid())
+  type             String   // vendor, damaged, equipment, staff, rush, power
+  description      String
+  affectedProducts String?  // JSON array of product IDs
+  affectedEquipment String? // Gerätename
+  severity         String   @default("medium") // low, medium, high, critical
+  status           String   @default("active") // active, resolved
+  resolvedAt       DateTime?
+  actionsTaken     String?  // JSON array of actions taken when resolved
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// ─── Checklist ───────────────────────────────────────────────
+
+model ChecklistTemplate {
+  id        String           @id @default(cuid())
+  text      String
+  group     String           @default("Sonstiges")
+  sortOrder Int              @default(0)
+  isActive  Boolean          @default(true)
+  notes     String?
+  entries   ChecklistEntry[]
+}
+
+model ChecklistEntry {
+  id          String            @id @default(cuid())
+  templateId  String
+  template    ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  date        DateTime
+  isCompleted Boolean           @default(false)
+  completedAt DateTime?
+  completedBy String?
+  notes       String?
+
+  @@unique([templateId, date])
+  @@index([date])
+}
+
+// ─── Temperature Log ─────────────────────────────────────────
+
+model TempLog {
+  id          String   @id @default(cuid())
+  equipment   String   // "Kühlschrank 1", "Kühlschrank 2"
+  temperature Float
+  inRange     Boolean  @default(true) // unter 7°C = true
+  recordedAt  DateTime @default(now())
+
+  @@index([recordedAt])
+}
+
+// ─── Competitors ─────────────────────────────────────────────
+
+model CompetitorNote {
+  id             String   @id @default(cuid())
+  competitorName String
+  event          String   // Preis, Angebot, Aktion, Sonstiges
+  notes          String?
+  impactEstimate String   @default("low") // low, medium, high
+  date           DateTime
+  createdAt      DateTime @default(now())
+
+  @@index([date])
+}
+
+
+// ─── Quick Notes ─────────────────────────────────────────────
+
+model QuickNote {
+  id        String   @id @default(cuid())
+  date      DateTime
+  text      String
+  category  String   @default("Allgemein") // Allgemein, Verkauf, Personal, Lager, Sonstiges
+  createdAt DateTime @default(now())
+
+  @@index([date])
+}
+
+// ─── Emergency Contacts ──────────────────────────────────────
+
+model EmergencyContact {
+  id    String @id @default(cuid())
+  name  String
+  role  String // technician, electrician, supplier, landlord, backup_staff
+  phone String
+}
+
+// ─── Tutorial & Onboarding ───────────────────────────────────
+
+model TutorialProgress {
+  id            String  @id @default("singleton")
+  stepsCompleted String @default("[]") // JSON array of completed step IDs
+  isCompleted   Boolean @default(false)
+  skippedAt     DateTime?
+}
+
+model OnboardingStatus {
+  id          String  @id @default("singleton")
+  currentStep Int     @default(0)
+  isCompleted Boolean @default(false)
+  completedAt DateTime?
+}
+
+// ─── Shop Settings ───────────────────────────────────────────
+
+model ShopSettings {
+  id             String  @id @default("singleton")
+  shopName       String  @default("Mein Café")
+  location       String? // Ort/Stadt, optional
+  openTime       String  @default("06:00")
+  closeTime      String  @default("18:00")
+  fixedCostsDaily Float  @default(400) // Tägliche Fixkosten
+  strategyMode   String  @default("balanced") // balanced, profit, waste, stress
+  language       String  @default("de")
+  darkMode       String  @default("auto") // auto, light, dark
+  highContrast   Boolean @default(false)
+  reducedMotion  Boolean @default(false)
+  hapticFeedback Boolean @default(true)
+  fontSize       String  @default("normal") // small, normal, large
+  streaksEnabled Boolean @default(true)
+  currentStreak  Int     @default(0)
+  longestStreak  Int     @default(0)
+  lastDataEntry      DateTime?
+  typicalWeekProfile String?  // JSON: [{day:0,level:"ruhig"|"normal"|"voll"},...]
+  theme              String   @default("auto")
+  textSize           String   @default("normal")
+  googleReviewUrl    String?
+}
+
+// ─── Cash Count (Kassenbuch) ─────────────────────────────────
+
+model CashCount {
+  id           String   @id @default(cuid())
+  date         DateTime @unique
+  openAmount   Float    @default(0)
+  closeAmount  Float    @default(0)
+  cardTotal    Float    @default(0)
+  tipTotal     Float    @default(0)
+  difference   Float    @default(0)
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+// ─── Expenses ────────────────────────────────────────────────
+
+model Expense {
+  id          String   @id @default(cuid())
+  date        DateTime
+  category    String   // miete, strom, versicherung, werbung, reparatur, sonstiges
+  amount      Float
+  description String?
+  isRecurring Boolean  @default(false)
+  frequency   String?  // monthly, weekly, yearly
+  createdAt   DateTime @default(now())
+
+  @@index([date])
+  @@index([category])
+}
+
+// ─── Revenue Goals ───────────────────────────────────────────
+
+model RevenueGoal {
+  id           String   @id @default(cuid())
+  period       String   // daily, weekly, monthly
+  targetAmount Float
+  actualAmount Float    @default(0)
+  startDate    DateTime
+  endDate      DateTime
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@index([startDate, endDate])
+}
+
+// ─── Confidence Tracking ─────────────────────────────────────
+
+model ConfidenceModifier {
+  id               String @id @default(cuid())
+  suggestionType   String // demand, inventory, pricing, etc.
+  modifier         Float  @default(0) // Added to base confidence
+  consecutiveFails Int    @default(0)
+  isPaused         Boolean @default(false)
+}
+
+// ─── Recipes / Menu Costing ──────────────────────────────────
+
+model Recipe {
+  id            String             @id @default(cuid())
+  name          String
+  category      String             @default("other")
+  sellPrice     Float              @default(0)
+  servings      Int                @default(1)
+  prepTimeMin   Int                @default(0)
+  notes         String?
+  allergens     String?            // JSON array: ["gluten", "laktose", ...]
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  ingredients   RecipeIngredient[]
+}
+
+model RecipeIngredient {
+  id          String  @id @default(cuid())
+  recipeId    String
+  name        String
+  quantity    Float
+  unit        String  // g, ml, stk, kg, l
+  costPerUnit Float   @default(0)
+  recipe      Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@index([recipeId])
+}
+
+// ─── Suppliers ───────────────────────────────────────────────
+
+model Supplier {
+  id                  String            @id @default(cuid())
+  name                String
+  contactPerson       String?
+  email               String?
+  phone               String?
+  deliveryDays        String?           // JSON: ["Mo","Mi","Fr"]
+  minOrderAmount      Float             @default(0)
+  notes               String?
+  rating              Float?            // 1-5 overall rating
+  deliveryReliability Float?            // 1-5 delivery reliability
+  priceScore          Float?            // 1-5 price competitiveness
+  qualityScore        Float?            // 1-5 product quality
+  isActive            Boolean           @default(true)
+  createdAt           DateTime          @default(now())
+  products            SupplierProduct[]
+  orders              PurchaseOrder[]
+}
+
+model SupplierProduct {
+  id          String   @id @default(cuid())
+  supplierId  String
+  productName String
+  unit        String
+  pricePerUnit Float
+  articleNumber String?
+  supplier    Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId])
+}
+
+// ─── Purchase Orders ─────────────────────────────────────────
+
+model PurchaseOrder {
+  id            String              @id @default(cuid())
+  supplierId    String
+  orderDate     DateTime            @default(now())
+  deliveryDate  DateTime?
+  status        String              @default("draft") // draft, ordered, delivered, cancelled
+  totalAmount   Float               @default(0)
+  notes         String?
+  supplier      Supplier            @relation(fields: [supplierId], references: [id])
+  items         PurchaseOrderItem[]
+
+  @@index([supplierId])
+  @@index([status])
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(cuid())
+  orderId         String
+  productName     String
+  quantity        Float
+  unit            String
+  pricePerUnit    Float
+  totalPrice      Float         @default(0)
+  order           PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+// ─── HACCP / Compliance ──────────────────────────────────────
+
+model HACCPTemplate {
+  id            String      @id @default(cuid())
+  name          String
+  category      String      // temperatur, reinigung, empfang, sonstiges
+  description   String?
+  frequency     String      @default("daily") // daily, weekly, per_delivery
+  isActive      Boolean     @default(true)
+  checks        HACCPCheck[]
+}
+
+model HACCPCheck {
+  id            String        @id @default(cuid())
+  templateId    String
+  date          DateTime      @default(now())
+  value         String        // temperature number, "OK"/"NOK", etc.
+  isCompliant   Boolean       @default(true)
+  notes         String?
+  photoUrl      String?
+  performedBy   String?
+  template      HACCPTemplate @relation(fields: [templateId], references: [id])
+
+  @@index([templateId])
+  @@index([date])
+}
+
+model CleaningTask {
+  id          String        @id @default(cuid())
+  name        String
+  area        String        // kueche, theke, gastraum, lager, wc
+  frequency   String        @default("daily") // daily, weekly, monthly
+  assignedTo  String?
+  isActive    Boolean       @default(true)
+  logs        CleaningLog[]
+}
+
+model CleaningLog {
+  id          String       @id @default(cuid())
+  taskId      String
+  date        DateTime     @default(now())
+  completedBy String?
+  notes       String?
+  task        CleaningTask @relation(fields: [taskId], references: [id])
+
+  @@index([taskId])
+  @@index([date])
+}
+
+// ─── Customer Counting ───────────────────────────────────────
+
+model CustomerCount {
+  id          String   @id @default(cuid())
+  date        DateTime
+  hour        Int?
+  count       Int
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  @@unique([date, hour])
+  @@index([date])
+}
+
+// ─── Staff / Labor ───────────────────────────────────────────
+
+model LaborEntry {
+  id          String      @id @default(cuid())
+  staffId     String
+  staff       StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date        DateTime
+  hoursWorked Float
+  hourlyWage  Float       @default(0)
+  totalCost   Float       @default(0)
+  notes       String?
+  createdAt   DateTime    @default(now())
+
+  @@index([staffId])
+  @@index([date])
+}
+
+
+
+// ─── Promotions ──────────────────────────────────────────────
+
+model Promotion {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  type        String    @default("discount") // discount, bundle, event, happy_hour
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean   @default(true)
+  discount    Float?
+  conditions  String?
+  results     String?   // JSON: {revenue, customers, feedback}
+  createdAt   DateTime  @default(now())
+
+  @@index([startDate, endDate])
+}
+
+// ─── Menu Planning ───────────────────────────────────────────
+
+model MenuPlan {
+  id          String         @id @default(cuid())
+  name        String
+  season      String         // fruehling, sommer, herbst, winter
+  startDate   DateTime
+  endDate     DateTime
+  notes       String?
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  items       MenuPlanItem[]
+}
+
+model MenuPlanItem {
+  id          String   @id @default(cuid())
+  planId      String
+  productName String
+  category    String
+  sellPrice   Float
+  isNew       Boolean  @default(false)
+  plan        MenuPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+}
+
+// ─── Application Logs ─────────────────────────────────────────
+
+model AppLog {
+  id        String   @id @default(cuid())
+  level     String   // debug, info, warn, error
+  source    String   // api, engine, frontend, system
+  message   String
+  meta      String?  // JSON
+  createdAt DateTime @default(now())
+
+  @@index([level])
+  @@index([createdAt])
+  @@index([source])
+}
+
+// ─── Coach Messages ───────────────────────────────────────────
+
+model CoachMessage {
+  id        String   @id @default(cuid())
+  role      String   // user, coach
+  content   String
+  context   String?  // JSON: KPIs snapshot at time of message
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+
+
+
