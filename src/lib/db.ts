@@ -2,7 +2,6 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import path from "path";
 import fs from "fs";
-import { execSync } from "child_process";
 
 function isVercelRuntime(): boolean {
   return process.env.VERCEL === "1" || typeof process.env.VERCEL_REGION === "string";
@@ -10,7 +9,6 @@ function isVercelRuntime(): boolean {
 
 export function resolveDbPath(): string {
   if (isVercelRuntime()) {
-    // Vercel serverless: only /tmp is writable. Ignore file:./dev.db from .env.
     return "/tmp/dev.db";
   }
 
@@ -28,6 +26,7 @@ export function resolveDbPath(): string {
 }
 
 const dbPath = resolveDbPath();
+const templatePath = path.join(process.cwd(), "prisma/vercel-template.db");
 const dbDir = path.dirname(dbPath);
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
@@ -40,18 +39,12 @@ const globalForPrisma = globalThis as unknown as {
 
 function ensureSchema() {
   if (globalForPrisma.dbReady) return;
-  const needsInit = !fs.existsSync(dbPath) || fs.statSync(dbPath).size === 0;
-  if (needsInit || isVercelRuntime()) {
-    try {
-      execSync("npx prisma db push --skip-generate", {
-        cwd: process.cwd(),
-        stdio: "pipe",
-        env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
-      });
-    } catch (e) {
-      console.warn("prisma db push:", e);
-    }
+
+  const missing = !fs.existsSync(dbPath) || fs.statSync(dbPath).size === 0;
+  if (missing && fs.existsSync(templatePath)) {
+    fs.copyFileSync(templatePath, dbPath);
   }
+
   globalForPrisma.dbReady = true;
 }
 
@@ -63,8 +56,4 @@ function createPrismaClient() {
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-} else {
-  globalForPrisma.prisma = prisma;
-}
+globalForPrisma.prisma = prisma;
