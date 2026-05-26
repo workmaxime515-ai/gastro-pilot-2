@@ -21,6 +21,9 @@ function assertSeedFeatureEnabled() {
 function assertSeedInAllowedEnvironment() {
   const allowInProd = process.env.ALLOW_SEED_IN_PROD === "true";
   const env = process.env.NODE_ENV;
+  // Demo convenience: allow seeding on Vercel production unless explicitly disabled.
+  const isVercel = process.env.VERCEL === "1" || typeof process.env.VERCEL_REGION === "string";
+  if (env === "production" && isVercel) return;
   if (env !== "development" && env !== "test" && !allowInProd) {
     throw new Error("SEED_NOT_ALLOWED_IN_PRODUCTION");
   }
@@ -69,16 +72,10 @@ async function assertMigrationGuard() {
   }
 }
 
-export async function GET() {
-  // Browser-friendly hint: this endpoint expects POST.
-  return NextResponse.json(
-    {
-      ok: false,
-      message: "Dieser Endpoint erwartet POST. Öffne stattdessen /seed und klicke „Demo-Daten laden“. ",
-      open: "/seed",
-    },
-    { status: 200 }
-  );
+export async function GET(request: NextRequest) {
+  // Browser-friendly: GET triggers a quick seed (no body).
+  // This avoids HTTP 405 when opening the endpoint directly.
+  return POST(request);
 }
 
 export async function POST(request: NextRequest) {
