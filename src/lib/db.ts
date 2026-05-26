@@ -26,7 +26,6 @@ export function resolveDbPath(): string {
 }
 
 const dbPath = resolveDbPath();
-const templatePath = path.join(process.cwd(), "prisma/vercel-template.db");
 const dbDir = path.dirname(dbPath);
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
@@ -40,9 +39,17 @@ const globalForPrisma = globalThis as unknown as {
 function ensureSchema() {
   if (globalForPrisma.dbReady) return;
 
-  const missing = !fs.existsSync(dbPath) || fs.statSync(dbPath).size === 0;
-  if (missing && fs.existsSync(templatePath)) {
-    fs.copyFileSync(templatePath, dbPath);
+  const candidates = [
+    path.join(process.cwd(), "prisma/vercel-template.db"),
+    path.join(process.cwd(), "vercel-template.db"),
+  ];
+  const template = candidates.find((p) => fs.existsSync(p));
+
+  // On Vercel always refresh /tmp from template (stale empty DBs break health checks).
+  if (isVercelRuntime() && template) {
+    fs.copyFileSync(template, dbPath);
+  } else if ((!fs.existsSync(dbPath) || fs.statSync(dbPath).size === 0) && template) {
+    fs.copyFileSync(template, dbPath);
   }
 
   globalForPrisma.dbReady = true;
