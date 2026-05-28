@@ -15,17 +15,29 @@ async function api(path, opts = {}) {
   return body;
 }
 
+async function ensureIngredient(name, unit, stockQty, costPerUnit) {
+  const list = await api(`/api/ingredients?unit=${unit}`);
+  let ing = list.find((i) => i.name === name);
+  if (!ing) {
+    return api("/api/ingredients", {
+      method: "POST",
+      body: JSON.stringify({ name, unit, stockQty, costPerUnit }),
+    });
+  }
+  if (Math.abs(ing.stockQty - stockQty) > 0.01) {
+    return api(`/api/ingredients/${ing.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ stockQty }),
+    });
+  }
+  return ing;
+}
+
 async function main() {
   console.log("Croissant test @", BASE);
 
-  await api("/api/ingredients", {
-    method: "POST",
-    body: JSON.stringify({ name: "Butter", unit: "g", stockQty: 5000, costPerUnit: 0.01 }),
-  }).catch(() => {});
-  await api("/api/ingredients", {
-    method: "POST",
-    body: JSON.stringify({ name: "Mehl", unit: "g", stockQty: 10000, costPerUnit: 0.002 }),
-  }).catch(() => {});
+  await ensureIngredient("Butter", "g", 5000, 0.01);
+  await ensureIngredient("Mehl", "g", 10000, 0.002);
 
   const products = await api("/api/products?all=true");
   let croissant = products.find((p) => p.name === "Croissant Test");
