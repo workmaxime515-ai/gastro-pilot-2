@@ -254,3 +254,28 @@ export type AppLog = Prisma.AppLogModel
  * 
  */
 export type CoachMessage = Prisma.CoachMessageModel
+/**
+ * Model Ingredient
+ * 
+ */
+export type Ingredient = Prisma.IngredientModel
+/**
+ * Model SaleEvent
+ * 
+ */
+export type SaleEvent = Prisma.SaleEventModel
+/**
+ * Model InventoryLedger
+ * 
+ */
+export type InventoryLedger = Prisma.InventoryLedgerModel
+/**
+ * Model FinanceLedger
+ * 
+ */
+export type FinanceLedger = Prisma.FinanceLedgerModel
+/**
+ * Model ManagerAlert
+ * 
+ */
+export type ManagerAlert = Prisma.ManagerAlertModel

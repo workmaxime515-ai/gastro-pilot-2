@@ -27,6 +27,8 @@ model Product {
   dailySales    DailySales[]
   inventory     Inventory[]
   wasteLog      WasteLog[]
+  saleEvents    SaleEvent[]
+  recipe        Recipe?
 }
 
 
@@ -385,6 +387,8 @@ model ConfidenceModifier {
 
 model Recipe {
   id            String             @id @default(cuid())
+  productId     String?            @unique
+  product       Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
   name          String
   category      String             @default("other")
   sellPrice     Float              @default(0)
@@ -626,6 +630,85 @@ model CoachMessage {
   @@index([createdAt])
 }
 
+// ─── CoffeeFlow Manager ──────────────────────────────────────
 
+model Ingredient {
+  id          String            @id @default(cuid())
+  name        String
+  unit        String            // g, ml, l, stk
+  stockQty    Float             @default(0)
+  minStock    Float?
+  costPerUnit Float             @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  ledger      InventoryLedger[]
+
+  @@unique([name, unit])
+  @@index([unit])
+}
+
+model SaleEvent {
+  id            String            @id @default(cuid())
+  productId     String
+  product       Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity      Int
+  unitPrice     Float
+  revenue       Float
+  cogs          Float             @default(0)
+  cogsStatus    String            @default("pending") // complete, pending
+  source        String            @default("manual")
+  externalId    String?           @unique
+  soldAt        DateTime          @default(now())
+  inventoryLedger InventoryLedger[]
+  financeLedger   FinanceLedger[]
+
+  @@index([soldAt])
+  @@index([productId])
+}
+
+model InventoryLedger {
+  id           String     @id @default(cuid())
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  saleEventId  String?
+  saleEvent    SaleEvent? @relation(fields: [saleEventId], references: [id], onDelete: SetNull)
+  deltaQty     Float
+  balanceAfter Float
+  reason       String     @default("sale") // sale, adjustment
+  createdAt    DateTime   @default(now())
+
+  @@index([ingredientId])
+  @@index([saleEventId])
+  @@index([createdAt])
+}
+
+model FinanceLedger {
+  id          String     @id @default(cuid())
+  saleEventId String?
+  saleEvent   SaleEvent? @relation(fields: [saleEventId], references: [id], onDelete: SetNull)
+  type        String     // revenue, cogs
+  amount      Float
+  productId   String?
+  date        DateTime   @default(now())
+  notes       String?
+
+  @@index([date])
+  @@index([type, date])
+  @@index([saleEventId])
+}
+
+model ManagerAlert {
+  id           String   @id @default(cuid())
+  type         String   // recipe_pending, low_stock
+  title        String
+  message      String
+  action       String?
+  productId    String?
+  ingredientId String?
+  isRead       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([isRead, createdAt])
+}
 
 

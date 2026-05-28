@@ -295,6 +295,8 @@ export type ProductWhereInput = {
   dailySales?: Prisma.DailySalesListRelationFilter
   inventory?: Prisma.InventoryListRelationFilter
   wasteLog?: Prisma.WasteLogListRelationFilter
+  saleEvents?: Prisma.SaleEventListRelationFilter
+  recipe?: Prisma.XOR<Prisma.RecipeNullableScalarRelationFilter, Prisma.RecipeWhereInput> | null
 }
 
 export type ProductOrderByWithRelationInput = {
@@ -314,6 +316,8 @@ export type ProductOrderByWithRelationInput = {
   dailySales?: Prisma.DailySalesOrderByRelationAggregateInput
   inventory?: Prisma.InventoryOrderByRelationAggregateInput
   wasteLog?: Prisma.WasteLogOrderByRelationAggregateInput
+  saleEvents?: Prisma.SaleEventOrderByRelationAggregateInput
+  recipe?: Prisma.RecipeOrderByWithRelationInput
 }
 
 export type ProductWhereUniqueInput = Prisma.AtLeast<{
@@ -336,6 +340,8 @@ export type ProductWhereUniqueInput = Prisma.AtLeast<{
   dailySales?: Prisma.DailySalesListRelationFilter
   inventory?: Prisma.InventoryListRelationFilter
   wasteLog?: Prisma.WasteLogListRelationFilter
+  saleEvents?: Prisma.SaleEventListRelationFilter
+  recipe?: Prisma.XOR<Prisma.RecipeNullableScalarRelationFilter, Prisma.RecipeWhereInput> | null
 }, "id">
 
 export type ProductOrderByWithAggregationInput = {
@@ -395,6 +401,8 @@ export type ProductCreateInput = {
   dailySales?: Prisma.DailySalesCreateNestedManyWithoutProductInput
   inventory?: Prisma.InventoryCreateNestedManyWithoutProductInput
   wasteLog?: Prisma.WasteLogCreateNestedManyWithoutProductInput
+  saleEvents?: Prisma.SaleEventCreateNestedManyWithoutProductInput
+  recipe?: Prisma.RecipeCreateNestedOneWithoutProductInput
 }
 
 export type ProductUncheckedCreateInput = {
@@ -414,6 +422,8 @@ export type ProductUncheckedCreateInput = {
   dailySales?: Prisma.DailySalesUncheckedCreateNestedManyWithoutProductInput
   inventory?: Prisma.InventoryUncheckedCreateNestedManyWithoutProductInput
   wasteLog?: Prisma.WasteLogUncheckedCreateNestedManyWithoutProductInput
+  saleEvents?: Prisma.SaleEventUncheckedCreateNestedManyWithoutProductInput
+  recipe?: Prisma.RecipeUncheckedCreateNestedOneWithoutProductInput
 }
 
 export type ProductUpdateInput = {
@@ -433,6 +443,8 @@ export type ProductUpdateInput = {
   dailySales?: Prisma.DailySalesUpdateManyWithoutProductNestedInput
   inventory?: Prisma.InventoryUpdateManyWithoutProductNestedInput
   wasteLog?: Prisma.WasteLogUpdateManyWithoutProductNestedInput
+  saleEvents?: Prisma.SaleEventUpdateManyWithoutProductNestedInput
+  recipe?: Prisma.RecipeUpdateOneWithoutProductNestedInput
 }
 
 export type ProductUncheckedUpdateInput = {
@@ -452,6 +464,8 @@ export type ProductUncheckedUpdateInput = {
   dailySales?: Prisma.DailySalesUncheckedUpdateManyWithoutProductNestedInput
   inventory?: Prisma.InventoryUncheckedUpdateManyWithoutProductNestedInput
   wasteLog?: Prisma.WasteLogUncheckedUpdateManyWithoutProductNestedInput
+  saleEvents?: Prisma.SaleEventUncheckedUpdateManyWithoutProductNestedInput
+  recipe?: Prisma.RecipeUncheckedUpdateOneWithoutProductNestedInput
 }
 
 export type ProductCreateManyInput = {
@@ -569,6 +583,11 @@ export type ProductScalarRelationFilter = {
   isNot?: Prisma.ProductWhereInput
 }
 
+export type ProductNullableScalarRelationFilter = {
+  is?: Prisma.ProductWhereInput | null
+  isNot?: Prisma.ProductWhereInput | null
+}
+
 export type StringFieldUpdateOperationsInput = {
   set?: string
 }
@@ -643,6 +662,36 @@ export type ProductUpdateOneRequiredWithoutWasteLogNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.ProductUpdateToOneWithWhereWithoutWasteLogInput, Prisma.ProductUpdateWithoutWasteLogInput>, Prisma.ProductUncheckedUpdateWithoutWasteLogInput>
 }
 
+export type ProductCreateNestedOneWithoutRecipeInput = {
+  create?: Prisma.XOR<Prisma.ProductCreateWithoutRecipeInput, Prisma.ProductUncheckedCreateWithoutRecipeInput>
+  connectOrCreate?: Prisma.ProductCreateOrConnectWithoutRecipeInput
+  connect?: Prisma.ProductWhereUniqueInput
+}
+
+export type ProductUpdateOneWithoutRecipeNestedInput = {
+  create?: Prisma.XOR<Prisma.ProductCreateWithoutRecipeInput, Prisma.ProductUncheckedCreateWithoutRecipeInput>
+  connectOrCreate?: Prisma.ProductCreateOrConnectWithoutRecipeInput
+  upsert?: Prisma.ProductUpsertWithoutRecipeInput
+  disconnect?: Prisma.ProductWhereInput | boolean
+  delete?: Prisma.ProductWhereInput | boolean
+  connect?: Prisma.ProductWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ProductUpdateToOneWithWhereWithoutRecipeInput, Prisma.ProductUpdateWithoutRecipeInput>, Prisma.ProductUncheckedUpdateWithoutRecipeInput>
+}
+
+export type ProductCreateNestedOneWithoutSaleEventsInput = {
+  create?: Prisma.XOR<Prisma.ProductCreateWithoutSaleEventsInput, Prisma.ProductUncheckedCreateWithoutSaleEventsInput>
+  connectOrCreate?: Prisma.ProductCreateOrConnectWithoutSaleEventsInput
+  connect?: Prisma.ProductWhereUniqueInput
+}
+
+export type ProductUpdateOneRequiredWithoutSaleEventsNestedInput = {
+  create?: Prisma.XOR<Prisma.ProductCreateWithoutSaleEventsInput, Prisma.ProductUncheckedCreateWithoutSaleEventsInput>
+  connectOrCreate?: Prisma.ProductCreateOrConnectWithoutSaleEventsInput
+  upsert?: Prisma.ProductUpsertWithoutSaleEventsInput
+  connect?: Prisma.ProductWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ProductUpdateToOneWithWhereWithoutSaleEventsInput, Prisma.ProductUpdateWithoutSaleEventsInput>, Prisma.ProductUncheckedUpdateWithoutSaleEventsInput>
+}
+
 export type ProductCreateWithoutDailySalesInput = {
   id?: string
   name: string
@@ -659,6 +708,8 @@ export type ProductCreateWithoutDailySalesInput = {
   updatedAt?: Date | string
   inventory?: Prisma.InventoryCreateNestedManyWithoutProductInput
   wasteLog?: Prisma.WasteLogCreateNestedManyWithoutProductInput
+  saleEvents?: Prisma.SaleEventCreateNestedManyWithoutProductInput
+  recipe?: Prisma.RecipeCreateNestedOneWithoutProductInput
 }
 
 export type ProductUncheckedCreateWithoutDailySalesInput = {
@@ -677,6 +728,8 @@ export type ProductUncheckedCreateWithoutDailySalesInput = {
   updatedAt?: Date | string
   inventory?: Prisma.InventoryUncheckedCreateNestedManyWithoutProductInput
   wasteLog?: Prisma.WasteLogUncheckedCreateNestedManyWithoutProductInput
+  saleEvents?: Prisma.SaleEventUncheckedCreateNestedManyWithoutProductInput
+  recipe?: Prisma.RecipeUncheckedCreateNestedOneWithoutProductInput
 }
 
 export type ProductCreateOrConnectWithoutDailySalesInput = {
@@ -711,6 +764,8 @@ export type ProductUpdateWithoutDailySalesInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   inventory?: Prisma.InventoryUpdateManyWithoutProductNestedInput
   wasteLog?: Prisma.WasteLogUpdateManyWithoutProductNestedInput
+  saleEvents?: Prisma.SaleEventUpdateManyWithoutProductNestedInput
+  recipe?: Prisma.RecipeUpdateOneWithoutProductNestedInput
 }
 
 export type ProductUncheckedUpdateWithoutDailySalesInput = {
@@ -729,6 +784,8 @@ export type ProductUncheckedUpdateWithoutDailySalesInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   inventory?: Prisma.InventoryUncheckedUpdateManyWithoutProductNestedInput
   wasteLog?: Prisma.WasteLogUncheckedUpdateManyWithoutProductNestedInput
+  saleEvents?: Prisma.SaleEventUncheckedUpdateManyWithoutProductNestedInput
+  recipe?: Prisma.RecipeUncheckedUpdateOneWithoutProductNestedInput
 }
 
 export type ProductCreateWithoutInventoryInput = {
@@ -747,6 +804,8 @@ export type ProductCreateWithoutInventoryInput = {
   updatedAt?: Date | string
   dailySales?: Prisma.DailySalesCreateNestedManyWithoutProductInput
   wasteLog?: Prisma.WasteLogCreateNestedManyWithoutProductInput
+  saleEvents?: Prisma.SaleEventCreateNestedManyWithoutProductInput
+  recipe?: Prisma.RecipeCreateNestedOneWithoutProductInput
 }
 
 export type ProductUncheckedCreateWithoutInventoryInput = {
@@ -765,6 +824,8 @@ export type ProductUncheckedCreateWithoutInventoryInput = {
   updatedAt?: Date | string
   dailySales?: Prisma.DailySalesUncheckedCreateNestedManyWithoutProductInput
   wasteLog?: Prisma.WasteLogUncheckedCreateNestedManyWithoutProductInput
+  saleEvents?: Prisma.SaleEventUncheckedCreateNestedManyWithoutProductInput
+  recipe?: Prisma.RecipeUncheckedCreateNestedOneWithoutProductInput
 }
 
 export type ProductCreateOrConnectWithoutInventoryInput = {
@@ -799,6 +860,8 @@ export type ProductUpdateWithoutInventoryInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   dailySales?: Prisma.DailySalesUpdateManyWithoutProductNestedInput
   wasteLog?: Prisma.WasteLogUpdateManyWithoutProductNestedInput
+  saleEvents?: Prisma.SaleEventUpdateManyWithoutProductNestedInput
+  recipe?: Prisma.RecipeUpdateOneWithoutProductNestedInput
 }
 
 export type ProductUncheckedUpdateWithoutInventoryInput = {
@@ -817,6 +880,8 @@ export type ProductUncheckedUpdateWithoutInventoryInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   dailySales?: Prisma.DailySalesUncheckedUpdateManyWithoutProductNestedInput
   wasteLog?: Prisma.WasteLogUncheckedUpdateManyWithoutProductNestedInput
+  saleEvents?: Prisma.SaleEventUncheckedUpdateManyWithoutProductNestedInput
+  recipe?: Prisma.RecipeUncheckedUpdateOneWithoutProductNestedInput
 }
 
 export type ProductCreateWithoutWasteLogInput = {
@@ -835,6 +900,8 @@ export type ProductCreateWithoutWasteLogInput = {
   updatedAt?: Date | string
   dailySales?: Prisma.DailySalesCreateNestedManyWithoutProductInput
   inventory?: Prisma.InventoryCreateNestedManyWithoutProductInput
+  saleEvents?: Prisma.SaleEventCreateNestedManyWithoutProductInput
+  recipe?: Prisma.RecipeCreateNestedOneWithoutProductInput
 }
 
 export type ProductUncheckedCreateWithoutWasteLogInput = {
@@ -853,6 +920,8 @@ export type ProductUncheckedCreateWithoutWasteLogInput = {
   updatedAt?: Date | string
   dailySales?: Prisma.DailySalesUncheckedCreateNestedManyWithoutProductInput
   inventory?: Prisma.InventoryUncheckedCreateNestedManyWithoutProductInput
+  saleEvents?: Prisma.SaleEventUncheckedCreateNestedManyWithoutProductInput
+  recipe?: Prisma.RecipeUncheckedCreateNestedOneWithoutProductInput
 }
 
 export type ProductCreateOrConnectWithoutWasteLogInput = {
@@ -887,6 +956,8 @@ export type ProductUpdateWithoutWasteLogInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   dailySales?: Prisma.DailySalesUpdateManyWithoutProductNestedInput
   inventory?: Prisma.InventoryUpdateManyWithoutProductNestedInput
+  saleEvents?: Prisma.SaleEventUpdateManyWithoutProductNestedInput
+  recipe?: Prisma.RecipeUpdateOneWithoutProductNestedInput
 }
 
 export type ProductUncheckedUpdateWithoutWasteLogInput = {
@@ -905,6 +976,200 @@ export type ProductUncheckedUpdateWithoutWasteLogInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   dailySales?: Prisma.DailySalesUncheckedUpdateManyWithoutProductNestedInput
   inventory?: Prisma.InventoryUncheckedUpdateManyWithoutProductNestedInput
+  saleEvents?: Prisma.SaleEventUncheckedUpdateManyWithoutProductNestedInput
+  recipe?: Prisma.RecipeUncheckedUpdateOneWithoutProductNestedInput
+}
+
+export type ProductCreateWithoutRecipeInput = {
+  id?: string
+  name: string
+  category: string
+  costPrice: number
+  sellPrice: number
+  spoilageHours?: number
+  isActive?: boolean
+  isSeasonal?: boolean
+  seasonMonths?: string | null
+  allergens?: string | null
+  sortOrder?: number
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  dailySales?: Prisma.DailySalesCreateNestedManyWithoutProductInput
+  inventory?: Prisma.InventoryCreateNestedManyWithoutProductInput
+  wasteLog?: Prisma.WasteLogCreateNestedManyWithoutProductInput
+  saleEvents?: Prisma.SaleEventCreateNestedManyWithoutProductInput
+}
+
+export type ProductUncheckedCreateWithoutRecipeInput = {
+  id?: string
+  name: string
+  category: string
+  costPrice: number
+  sellPrice: number
+  spoilageHours?: number
+  isActive?: boolean
+  isSeasonal?: boolean
+  seasonMonths?: string | null
+  allergens?: string | null
+  sortOrder?: number
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  dailySales?: Prisma.DailySalesUncheckedCreateNestedManyWithoutProductInput
+  inventory?: Prisma.InventoryUncheckedCreateNestedManyWithoutProductInput
+  wasteLog?: Prisma.WasteLogUncheckedCreateNestedManyWithoutProductInput
+  saleEvents?: Prisma.SaleEventUncheckedCreateNestedManyWithoutProductInput
+}
+
+export type ProductCreateOrConnectWithoutRecipeInput = {
+  where: Prisma.ProductWhereUniqueInput
+  create: Prisma.XOR<Prisma.ProductCreateWithoutRecipeInput, Prisma.ProductUncheckedCreateWithoutRecipeInput>
+}
+
+export type ProductUpsertWithoutRecipeInput = {
+  update: Prisma.XOR<Prisma.ProductUpdateWithoutRecipeInput, Prisma.ProductUncheckedUpdateWithoutRecipeInput>
+  create: Prisma.XOR<Prisma.ProductCreateWithoutRecipeInput, Prisma.ProductUncheckedCreateWithoutRecipeInput>
+  where?: Prisma.ProductWhereInput
+}
+
+export type ProductUpdateToOneWithWhereWithoutRecipeInput = {
+  where?: Prisma.ProductWhereInput
+  data: Prisma.XOR<Prisma.ProductUpdateWithoutRecipeInput, Prisma.ProductUncheckedUpdateWithoutRecipeInput>
+}
+
+export type ProductUpdateWithoutRecipeInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  category?: Prisma.StringFieldUpdateOperationsInput | string
+  costPrice?: Prisma.FloatFieldUpdateOperationsInput | number
+  sellPrice?: Prisma.FloatFieldUpdateOperationsInput | number
+  spoilageHours?: Prisma.IntFieldUpdateOperationsInput | number
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isSeasonal?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  seasonMonths?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  allergens?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  dailySales?: Prisma.DailySalesUpdateManyWithoutProductNestedInput
+  inventory?: Prisma.InventoryUpdateManyWithoutProductNestedInput
+  wasteLog?: Prisma.WasteLogUpdateManyWithoutProductNestedInput
+  saleEvents?: Prisma.SaleEventUpdateManyWithoutProductNestedInput
+}
+
+export type ProductUncheckedUpdateWithoutRecipeInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  category?: Prisma.StringFieldUpdateOperationsInput | string
+  costPrice?: Prisma.FloatFieldUpdateOperationsInput | number
+  sellPrice?: Prisma.FloatFieldUpdateOperationsInput | number
+  spoilageHours?: Prisma.IntFieldUpdateOperationsInput | number
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isSeasonal?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  seasonMonths?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  allergens?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  dailySales?: Prisma.DailySalesUncheckedUpdateManyWithoutProductNestedInput
+  inventory?: Prisma.InventoryUncheckedUpdateManyWithoutProductNestedInput
+  wasteLog?: Prisma.WasteLogUncheckedUpdateManyWithoutProductNestedInput
+  saleEvents?: Prisma.SaleEventUncheckedUpdateManyWithoutProductNestedInput
+}
+
+export type ProductCreateWithoutSaleEventsInput = {
+  id?: string
+  name: string
+  category: string
+  costPrice: number
+  sellPrice: number
+  spoilageHours?: number
+  isActive?: boolean
+  isSeasonal?: boolean
+  seasonMonths?: string | null
+  allergens?: string | null
+  sortOrder?: number
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  dailySales?: Prisma.DailySalesCreateNestedManyWithoutProductInput
+  inventory?: Prisma.InventoryCreateNestedManyWithoutProductInput
+  wasteLog?: Prisma.WasteLogCreateNestedManyWithoutProductInput
+  recipe?: Prisma.RecipeCreateNestedOneWithoutProductInput
+}
+
+export type ProductUncheckedCreateWithoutSaleEventsInput = {
+  id?: string
+  name: string
+  category: string
+  costPrice: number
+  sellPrice: number
+  spoilageHours?: number
+  isActive?: boolean
+  isSeasonal?: boolean
+  seasonMonths?: string | null
+  allergens?: string | null
+  sortOrder?: number
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  dailySales?: Prisma.DailySalesUncheckedCreateNestedManyWithoutProductInput
+  inventory?: Prisma.InventoryUncheckedCreateNestedManyWithoutProductInput
+  wasteLog?: Prisma.WasteLogUncheckedCreateNestedManyWithoutProductInput
+  recipe?: Prisma.RecipeUncheckedCreateNestedOneWithoutProductInput
+}
+
+export type ProductCreateOrConnectWithoutSaleEventsInput = {
+  where: Prisma.ProductWhereUniqueInput
+  create: Prisma.XOR<Prisma.ProductCreateWithoutSaleEventsInput, Prisma.ProductUncheckedCreateWithoutSaleEventsInput>
+}
+
+export type ProductUpsertWithoutSaleEventsInput = {
+  update: Prisma.XOR<Prisma.ProductUpdateWithoutSaleEventsInput, Prisma.ProductUncheckedUpdateWithoutSaleEventsInput>
+  create: Prisma.XOR<Prisma.ProductCreateWithoutSaleEventsInput, Prisma.ProductUncheckedCreateWithoutSaleEventsInput>
+  where?: Prisma.ProductWhereInput
+}
+
+export type ProductUpdateToOneWithWhereWithoutSaleEventsInput = {
+  where?: Prisma.ProductWhereInput
+  data: Prisma.XOR<Prisma.ProductUpdateWithoutSaleEventsInput, Prisma.ProductUncheckedUpdateWithoutSaleEventsInput>
+}
+
+export type ProductUpdateWithoutSaleEventsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  category?: Prisma.StringFieldUpdateOperationsInput | string
+  costPrice?: Prisma.FloatFieldUpdateOperationsInput | number
+  sellPrice?: Prisma.FloatFieldUpdateOperationsInput | number
+  spoilageHours?: Prisma.IntFieldUpdateOperationsInput | number
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isSeasonal?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  seasonMonths?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  allergens?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  dailySales?: Prisma.DailySalesUpdateManyWithoutProductNestedInput
+  inventory?: Prisma.InventoryUpdateManyWithoutProductNestedInput
+  wasteLog?: Prisma.WasteLogUpdateManyWithoutProductNestedInput
+  recipe?: Prisma.RecipeUpdateOneWithoutProductNestedInput
+}
+
+export type ProductUncheckedUpdateWithoutSaleEventsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  category?: Prisma.StringFieldUpdateOperationsInput | string
+  costPrice?: Prisma.FloatFieldUpdateOperationsInput | number
+  sellPrice?: Prisma.FloatFieldUpdateOperationsInput | number
+  spoilageHours?: Prisma.IntFieldUpdateOperationsInput | number
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isSeasonal?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  seasonMonths?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  allergens?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  dailySales?: Prisma.DailySalesUncheckedUpdateManyWithoutProductNestedInput
+  inventory?: Prisma.InventoryUncheckedUpdateManyWithoutProductNestedInput
+  wasteLog?: Prisma.WasteLogUncheckedUpdateManyWithoutProductNestedInput
+  recipe?: Prisma.RecipeUncheckedUpdateOneWithoutProductNestedInput
 }
 
 
@@ -916,12 +1181,14 @@ export type ProductCountOutputType = {
   dailySales: number
   inventory: number
   wasteLog: number
+  saleEvents: number
 }
 
 export type ProductCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   dailySales?: boolean | ProductCountOutputTypeCountDailySalesArgs
   inventory?: boolean | ProductCountOutputTypeCountInventoryArgs
   wasteLog?: boolean | ProductCountOutputTypeCountWasteLogArgs
+  saleEvents?: boolean | ProductCountOutputTypeCountSaleEventsArgs
 }
 
 /**
@@ -955,6 +1222,13 @@ export type ProductCountOutputTypeCountWasteLogArgs<ExtArgs extends runtime.Type
   where?: Prisma.WasteLogWhereInput
 }
 
+/**
+ * ProductCountOutputType without action
+ */
+export type ProductCountOutputTypeCountSaleEventsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.SaleEventWhereInput
+}
+
 
 export type ProductSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -973,6 +1247,8 @@ export type ProductSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   dailySales?: boolean | Prisma.Product$dailySalesArgs<ExtArgs>
   inventory?: boolean | Prisma.Product$inventoryArgs<ExtArgs>
   wasteLog?: boolean | Prisma.Product$wasteLogArgs<ExtArgs>
+  saleEvents?: boolean | Prisma.Product$saleEventsArgs<ExtArgs>
+  recipe?: boolean | Prisma.Product$recipeArgs<ExtArgs>
   _count?: boolean | Prisma.ProductCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["product"]>
 
@@ -1029,6 +1305,8 @@ export type ProductInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs
   dailySales?: boolean | Prisma.Product$dailySalesArgs<ExtArgs>
   inventory?: boolean | Prisma.Product$inventoryArgs<ExtArgs>
   wasteLog?: boolean | Prisma.Product$wasteLogArgs<ExtArgs>
+  saleEvents?: boolean | Prisma.Product$saleEventsArgs<ExtArgs>
+  recipe?: boolean | Prisma.Product$recipeArgs<ExtArgs>
   _count?: boolean | Prisma.ProductCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type ProductIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -1040,6 +1318,8 @@ export type $ProductPayload<ExtArgs extends runtime.Types.Extensions.InternalArg
     dailySales: Prisma.$DailySalesPayload<ExtArgs>[]
     inventory: Prisma.$InventoryPayload<ExtArgs>[]
     wasteLog: Prisma.$WasteLogPayload<ExtArgs>[]
+    saleEvents: Prisma.$SaleEventPayload<ExtArgs>[]
+    recipe: Prisma.$RecipePayload<ExtArgs> | null
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1452,6 +1732,8 @@ export interface Prisma__ProductClient<T, Null = never, ExtArgs extends runtime.
   dailySales<T extends Prisma.Product$dailySalesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Product$dailySalesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$DailySalesPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   inventory<T extends Prisma.Product$inventoryArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Product$inventoryArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$InventoryPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   wasteLog<T extends Prisma.Product$wasteLogArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Product$wasteLogArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WasteLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  saleEvents<T extends Prisma.Product$saleEventsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Product$saleEventsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SaleEventPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  recipe<T extends Prisma.Product$recipeArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Product$recipeArgs<ExtArgs>>): Prisma.Prisma__RecipeClient<runtime.Types.Result.GetResult<Prisma.$RecipePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1949,6 +2231,49 @@ export type Product$wasteLogArgs<ExtArgs extends runtime.Types.Extensions.Intern
   take?: number
   skip?: number
   distinct?: Prisma.WasteLogScalarFieldEnum | Prisma.WasteLogScalarFieldEnum[]
+}
+
+/**
+ * Product.saleEvents
+ */
+export type Product$saleEventsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the SaleEvent
+   */
+  select?: Prisma.SaleEventSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the SaleEvent
+   */
+  omit?: Prisma.SaleEventOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.SaleEventInclude<ExtArgs> | null
+  where?: Prisma.SaleEventWhereInput
+  orderBy?: Prisma.SaleEventOrderByWithRelationInput | Prisma.SaleEventOrderByWithRelationInput[]
+  cursor?: Prisma.SaleEventWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.SaleEventScalarFieldEnum | Prisma.SaleEventScalarFieldEnum[]
+}
+
+/**
+ * Product.recipe
+ */
+export type Product$recipeArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Recipe
+   */
+  select?: Prisma.RecipeSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Recipe
+   */
+  omit?: Prisma.RecipeOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.RecipeInclude<ExtArgs> | null
+  where?: Prisma.RecipeWhereInput
 }
 
 /**

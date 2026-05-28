@@ -5,6 +5,12 @@ import path from "path";
 const dbPath = path.join(process.cwd(), "dev.db");
 const adapter = new PrismaBetterSqlite3({ url: `file:${dbPath}` });
 const prisma = new PrismaClient({ adapter });
+const modeArg = process.argv.find((arg) => arg.startsWith("--mode="))?.split("=")[1];
+const demoMode = (modeArg ?? process.env.DEMO_MODE) === "full" ? "full" : "quick";
+const DEMO_DAYS = demoMode === "full" ? 30 : 7;
+const RECENT_DAYS = Math.min(14, DEMO_DAYS);
+const WEEK_DAYS = Math.min(7, DEMO_DAYS);
+const seedText = (process.env.DEMO_SEED_TEXT ?? "").trim();
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -15,12 +21,34 @@ function daysAgo(n: number): Date {
   return d;
 }
 
+function createRng(seedInput: string) {
+  let h = 1779033703 ^ seedInput.length;
+  for (let i = 0; i < seedInput.length; i++) {
+    h = Math.imul(h ^ seedInput.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return () => {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  };
+}
+
+const rng = createRng(
+  seedText || `${Date.now()}-${Math.round(Math.random() * 1_000_000)}`
+);
+
 function rand(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  return Math.floor(rng() * (max - min + 1)) + min;
+}
+
+function randFloat(min: number, max: number): number {
+  return rng() * (max - min) + min;
 }
 
 function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+  return arr[Math.floor(rng() * arr.length)];
 }
 
 // Day-of-week multiplier (0=Sun, 1=Mon ... 6=Sat)
@@ -132,7 +160,15 @@ async function main() {
     "Heiße Schokolade": "drinks", "Frischer Orangensaft": "drinks",
   };
 
-  const products = [];
+  const products: Array<{
+    id: string;
+    name: string;
+    category: string;
+    costPrice: number;
+    sellPrice: number;
+    spoilageHours: number;
+    baseDaily: number;
+  }> = [];
   for (let i = 0; i < productDefs.length; i++) {
     const def = productDefs[i];
     const p = await prisma.product.create({
@@ -157,7 +193,7 @@ async function main() {
     { name: "Lisa", role: "barista", daysAgo: 5 }, // New employee!
   ];
 
-  const staffMembers = [];
+  const staffMembers: Array<{ id: string; name: string; role: string }> = [];
   for (const s of staffDefs) {
     const member = await prisma.staffMember.create({
       data: {
@@ -169,8 +205,8 @@ async function main() {
     staffMembers.push(member);
   }
 
-  // Create weekly schedule template (last 30 days)
-  for (let day = 0; day < 30; day++) {
+  // Create weekly schedule template
+  for (let day = 0; day < DEMO_DAYS; day++) {
     const date = daysAgo(day);
     const dow = date.getDay();
     if (dow === 0) continue; // Closed Sundays
@@ -202,21 +238,23 @@ async function main() {
     }
   }
 
-  // ─── Weather Data (30 days) ─────────────────────────────
-
-  for (let day = 0; day < 30; day++) {
-    const date = daysAgo(day);
-    const baseTemp = 5 + Math.sin((day / 30) * Math.PI) * 4; // Feb temps 1-9°C
-    await prisma.weatherData.create({
-      data: {
-        date,
-        tempHigh: Math.round((baseTemp + rand(2, 5)) * 10) / 10,
-        tempLow: Math.round((baseTemp - rand(1, 3)) * 10) / 10,
-        condition: pick(WEATHER_CONDITIONS),
-        humidity: rand(50, 85),
-      },
-    });
+  // ─── Weather Data ─────────────────────────────
+  async function seedWeather() {
+    for (let day = 0; day < DEMO_DAYS; day++) {
+      const date = daysAgo(day);
+      const baseTemp = 5 + Math.sin((day / Math.max(1, DEMO_DAYS)) * Math.PI) * 4; // Feb temps 1-9°C
+      await prisma.weatherData.create({
+        data: {
+          date,
+          tempHigh: Math.round((baseTemp + rand(2, 5)) * 10) / 10,
+          tempLow: Math.round((baseTemp - rand(1, 3)) * 10) / 10,
+          condition: pick(WEATHER_CONDITIONS),
+          humidity: rand(50, 85),
+        },
+      });
+    }
   }
+  await seedWeather();
 
   // ─── Events ─────────────────────────────────────────────
 
@@ -230,81 +268,94 @@ async function main() {
     data: { name: "Stadtfest", date: daysAgo(14), expectedImpact: "high", notes: "Großes Event, viel Laufkundschaft" },
   });
 
-  // ─── Daily Sales (30 days) ──────────────────────────────
+  // ─── Daily Sales ──────────────────────────────
+  async function seedSales() {
+    for (let day = 1; day <= DEMO_DAYS; day++) {
+      const date = daysAgo(day);
+      const dow = date.getDay();
+      if (dow === 0) continue; // Closed Sundays
 
-  for (let day = 1; day <= 30; day++) {
-    const date = daysAgo(day);
-    const dow = date.getDay();
-    if (dow === 0) continue; // Closed Sundays
+      const dowMult = DOW_MULTIPLIER[dow];
+      const eventBoost = day === 14 ? 1.4 : day === 3 ? 1.15 : 1.0;
+      const weatherEffect = rand(85, 115) / 100;
 
-    const dowMult = DOW_MULTIPLIER[dow];
-    // Events boost
-    const eventBoost = (day === 14) ? 1.4 : (day === 3) ? 1.15 : 1.0;
-    // Weather effect
-    const weatherEffect = rand(85, 115) / 100;
+      let dayRevenue = 0;
+      let dayWaste = 0;
+      let dayQty = 0;
 
-    let dayRevenue = 0;
-    let dayWaste = 0;
+      for (const prod of products) {
+        const baseQty = prod.baseDaily;
+        const actualQty = Math.max(
+          1,
+          Math.round(baseQty * dowMult * eventBoost * weatherEffect * (rand(80, 120) / 100))
+        );
 
-    for (const prod of products) {
-      const baseQty = prod.baseDaily;
-      const actualQty = Math.max(1, Math.round(baseQty * dowMult * eventBoost * weatherEffect * (rand(80, 120) / 100)));
+        for (let s = 0; s < TIME_SLOTS.length; s++) {
+          const slotQty = Math.max(0, Math.round(actualQty * SLOT_WEIGHTS[s] * (rand(70, 130) / 100)));
+          if (slotQty > 0) {
+            dayQty += slotQty;
+            const revenue = slotQty * prod.sellPrice;
+            dayRevenue += revenue;
+            await prisma.dailySales.create({
+              data: { productId: prod.id, date, quantity: slotQty, revenue, timeSlot: TIME_SLOTS[s] },
+            });
+          }
+        }
 
-      // Split across time slots
-      for (let s = 0; s < TIME_SLOTS.length; s++) {
-        const slotQty = Math.max(0, Math.round(actualQty * SLOT_WEIGHTS[s] * (rand(70, 130) / 100)));
-        if (slotQty > 0) {
-          const revenue = slotQty * prod.sellPrice;
-          dayRevenue += revenue;
-          await prisma.dailySales.create({
-            data: { productId: prod.id, date, quantity: slotQty, revenue, timeSlot: TIME_SLOTS[s] },
-          });
+        if (prod.spoilageHours > 0 && prod.spoilageHours < 9999) {
+          const preparedExtra = Math.round(baseQty * dowMult * 1.15);
+          const sold = Math.round(baseQty * dowMult * eventBoost * weatherEffect);
+          const wasted = Math.max(0, preparedExtra - sold + rand(-2, 3));
+          if (wasted > 0) {
+            dayWaste += wasted * prod.costPrice;
+            await prisma.wasteLog.create({
+              data: { productId: prod.id, date, quantity: wasted, reason: pick(["overproduction", "expired", "overproduction"]) },
+            });
+          }
         }
       }
 
-      // Waste (bakery and lunch items only)
-      if (prod.spoilageHours > 0 && prod.spoilageHours < 9999) {
-        const preparedExtra = Math.round(baseQty * dowMult * 1.15); // Always prepare 15% extra
-        const sold = Math.round(baseQty * dowMult * eventBoost * weatherEffect);
-        const wasted = Math.max(0, preparedExtra - sold + rand(-2, 3));
-        if (wasted > 0) {
-          dayWaste += wasted * prod.costPrice;
-          await prisma.wasteLog.create({
-            data: { productId: prod.id, date, quantity: wasted, reason: pick(["overproduction", "expired", "overproduction"]) },
-          });
-        }
+      await prisma.dayClose.create({
+        data: {
+          date,
+          totalRevenue: Math.round(dayRevenue * 100) / 100,
+          totalWaste: Math.round(dayWaste * 100) / 100,
+          dayRating: dayRevenue > 550 ? "good" : dayRevenue > 400 ? "normal" : "weak",
+          quickNote: day === 14 ? "Stadtfest — extrem viel los" : day === 20 ? "Baustelle vor der Tür" : undefined,
+        },
+      });
+
+      // Kundenzahl an Verkaufsmenge gekoppelt (Demo-Konsistenz), leichte manuelle Abweichung
+      if (day <= RECENT_DAYS && dayQty > 0) {
+        const fromSales = Math.max(1, Math.round(dayQty / 2.2));
+        const manualNoise = rand(0, 2);
+        await prisma.customerCount.create({
+          data: { date, hour: 12, count: fromSales + manualNoise },
+        });
       }
     }
-
-    // Day Close
-    await prisma.dayClose.create({
-      data: {
-        date,
-        totalRevenue: Math.round(dayRevenue * 100) / 100,
-        totalWaste: Math.round(dayWaste * 100) / 100,
-        dayRating: dayRevenue > 550 ? "good" : dayRevenue > 400 ? "normal" : "weak",
-        quickNote: day === 14 ? "Stadtfest — extrem viel los" : day === 20 ? "Baustelle vor der Tür" : undefined,
-      },
-    });
   }
+  await seedSales();
 
   // ─── Inventory (current) ────────────────────────────────
-
-  for (const prod of products) {
-    const baseStock = prod.spoilageHours > 0 && prod.spoilageHours < 9999
-      ? rand(3, 15)
-      : rand(20, 100);
-    await prisma.inventory.create({
-      data: {
-        productId: prod.id,
-        quantity: baseStock,
-        unit: prod.category === "drinks" ? "liters" : "pieces",
-        expiresAt: prod.spoilageHours > 0 && prod.spoilageHours < 9999
-          ? new Date(Date.now() + prod.spoilageHours * 3600 * 1000 * (rand(30, 100) / 100))
-          : undefined,
-      },
-    });
+  async function seedInventory() {
+    for (const prod of products) {
+      const baseStock = prod.spoilageHours > 0 && prod.spoilageHours < 9999
+        ? rand(3, 15)
+        : rand(20, 100);
+      await prisma.inventory.create({
+        data: {
+          productId: prod.id,
+          quantity: baseStock,
+          unit: prod.category === "drinks" ? "liters" : "pieces",
+          expiresAt: prod.spoilageHours > 0 && prod.spoilageHours < 9999
+            ? new Date(Date.now() + prod.spoilageHours * 3600 * 1000 * (rand(30, 100) / 100))
+            : undefined,
+        },
+      });
+    }
   }
+  await seedInventory();
 
   // ─── Emergency Logs ─────────────────────────────────────
 
@@ -362,13 +413,13 @@ async function main() {
 
   // ─── Temperature Logs ───────────────────────────────────
 
-  for (let day = 0; day < 14; day++) {
+  for (let day = 0; day < RECENT_DAYS; day++) {
     const date = daysAgo(day);
     // Morning reading
     await prisma.tempLog.create({
       data: {
         equipment: "Kühlschrank 1",
-        temperature: 3.5 + Math.random() * 2,
+        temperature: 3.5 + randFloat(0, 2),
         inRange: true,
         recordedAt: new Date(date.getTime() + 6 * 3600000),
       },
@@ -377,7 +428,7 @@ async function main() {
     await prisma.tempLog.create({
       data: {
         equipment: "Kühlschrank 1",
-        temperature: 4.0 + Math.random() * 2,
+        temperature: 4.0 + randFloat(0, 2),
         inRange: true,
         recordedAt: new Date(date.getTime() + 18 * 3600000),
       },
@@ -391,6 +442,9 @@ async function main() {
       { name: "Kälte-Müller GmbH", role: "technician", phone: "+49 170 1234567" },
       { name: "Elektro-Schmidt", role: "electrician", phone: "+49 170 2345678" },
       { name: "Bio-Lieferant Meier", role: "supplier", phone: "+49 170 3456789" },
+      { name: "Bäckerei Goldkorn", role: "supplier", phone: "+49 170 4567890" },
+      { name: "Hausverwaltung König", role: "landlord", phone: "+49 170 5678901" },
+      { name: "Springer Team West", role: "backup_staff", phone: "+49 170 6789012" },
     ],
   });
 
@@ -433,8 +487,66 @@ async function main() {
     data: { date: daysAgo(5), text: "Viele Touristen heute im Viertel" },
   });
 
+  // ─── Demo Suggestions (prefill) ─────────────────────────
+  async function seedSuggestions() {
+    const today = daysAgo(0);
+    await prisma.suggestion.createMany({
+      data: [
+        {
+          date: today,
+          type: "inventory",
+          category: "waste",
+          title: "Croissants als Tagesdeal pushen",
+          description: "Abverkauf bis 16:00 aktivieren, um Ablaufware zu reduzieren.",
+          reasoning: "Bestand ist hoch und Haltbarkeit kurz.",
+          expectedImpact: JSON.stringify({ waste: -12, revenue: 35 }),
+          confidence: 82,
+          riskLevel: "low",
+          difficulty: "easy",
+          inactionRisk: "Erhoehter Abschreibungsanteil am Abend.",
+          strategyMode: "balanced",
+          score: 84,
+          sortOrder: 0,
+        },
+        {
+          date: today,
+          type: "pricing",
+          category: "profit",
+          title: "Flat White + Muffin Bundle testen",
+          description: "Bundling im Mittagsfenster kann Bonhoehe steigern.",
+          reasoning: "Mittagspeak ist stabil, Bundle-Conversion oft hoch.",
+          expectedImpact: JSON.stringify({ revenue: 55 }),
+          confidence: 76,
+          riskLevel: "medium",
+          difficulty: "medium",
+          inactionRisk: "Verpasster Zusatzumsatz im Peak-Fenster.",
+          strategyMode: "balanced",
+          score: 79,
+          sortOrder: 1,
+        },
+        {
+          date: today,
+          type: "timing",
+          category: "stress",
+          title: "Vorproduktion fuer 11:30 vorbereiten",
+          description: "Wraps und Sandwiches um 10:45 vorkonfektionieren.",
+          reasoning: "Peak lastet auf Theke und Kasse gleichzeitig.",
+          expectedImpact: JSON.stringify({ stress: "down", revenue: 20 }),
+          confidence: 71,
+          riskLevel: "low",
+          difficulty: "easy",
+          inactionRisk: "Laengere Wartezeit und geringere Servicequalitaet.",
+          strategyMode: "balanced",
+          score: 73,
+          sortOrder: 2,
+        },
+      ],
+    });
+  }
+  await seedSuggestions();
+
   // ─── Cash Counts (last 7 days) ────────────────────────
-  for (let day = 1; day <= 7; day++) {
+  for (let day = 1; day <= WEEK_DAYS; day++) {
     const date = daysAgo(day);
     if (date.getDay() === 0) continue;
     await prisma.cashCount.create({
@@ -457,6 +569,7 @@ async function main() {
   await prisma.expense.create({ data: { date: daysAgo(2), category: "waren", amount: 890, description: "Bio-Lieferant Meier" } });
   await prisma.expense.create({ data: { date: daysAgo(7), category: "werbung", amount: 150, description: "Instagram Ads" } });
   await prisma.expense.create({ data: { date: daysAgo(10), category: "versicherung", amount: 180, description: "Betriebshaftpflicht", isRecurring: true, frequency: "monthly" } });
+  await prisma.expense.create({ data: { date: daysAgo(0), category: "sonstiges", amount: 38.5, description: "Demo: Verbrauchsmaterial heute" } });
 
   // ─── Revenue Goal ────────────────────────────────────
   const monthStart = new Date();
@@ -468,27 +581,116 @@ async function main() {
     data: { period: "monthly", targetAmount: 15000, actualAmount: 8750, startDate: monthStart, endDate: monthEnd, isActive: true },
   });
 
-  // ─── Recipes ─────────────────────────────────────────
-  const cappRecipe = await prisma.recipe.create({
-    data: { name: "Cappuccino", category: "coffee", sellPrice: 3.80 },
-  });
-  await prisma.recipeIngredient.createMany({
-    data: [
-      { recipeId: cappRecipe.id, name: "Espresso (Bohnen)", quantity: 18, unit: "g", costPerUnit: 0.012 },
-      { recipeId: cappRecipe.id, name: "Milch", quantity: 150, unit: "ml", costPerUnit: 0.0015 },
-    ],
-  });
-  const avoRecipe = await prisma.recipe.create({
-    data: { name: "Avocado-Toast", category: "lunch", sellPrice: 6.50 },
-  });
-  await prisma.recipeIngredient.createMany({
-    data: [
-      { recipeId: avoRecipe.id, name: "Avocado", quantity: 1, unit: "stk", costPerUnit: 0.50 },
-      { recipeId: avoRecipe.id, name: "Sauerteigbrot", quantity: 2, unit: "stk", costPerUnit: 0.15 },
-      { recipeId: avoRecipe.id, name: "Tomate", quantity: 0.5, unit: "stk", costPerUnit: 0.20 },
-      { recipeId: avoRecipe.id, name: "Gewuerze/Oel", quantity: 1, unit: "stk", costPerUnit: 0.10 },
-    ],
-  });
+  // ─── Recipes (10x Coffee + Bakery profile) ─────────────────
+  const recipeDefs = [
+    {
+      name: "Cappuccino",
+      category: "coffee",
+      sellPrice: 3.8,
+      ingredients: [
+        { name: "Espresso (Bohnen)", quantity: 18, unit: "g", costPerUnit: 0.012 },
+        { name: "Milch", quantity: 150, unit: "ml", costPerUnit: 0.0015 },
+      ],
+    },
+    {
+      name: "Flat White",
+      category: "coffee",
+      sellPrice: 4.1,
+      ingredients: [
+        { name: "Espresso (Bohnen)", quantity: 20, unit: "g", costPerUnit: 0.012 },
+        { name: "Milch", quantity: 170, unit: "ml", costPerUnit: 0.0015 },
+      ],
+    },
+    {
+      name: "Latte Macchiato",
+      category: "coffee",
+      sellPrice: 4.2,
+      ingredients: [
+        { name: "Espresso (Bohnen)", quantity: 18, unit: "g", costPerUnit: 0.012 },
+        { name: "Milch", quantity: 220, unit: "ml", costPerUnit: 0.0015 },
+      ],
+    },
+    {
+      name: "V60 Filter",
+      category: "coffee",
+      sellPrice: 3.6,
+      ingredients: [
+        { name: "Filterbohnen", quantity: 22, unit: "g", costPerUnit: 0.011 },
+        { name: "Filterpapier", quantity: 1, unit: "stk", costPerUnit: 0.06 },
+      ],
+    },
+    {
+      name: "Mocha",
+      category: "coffee",
+      sellPrice: 4.7,
+      ingredients: [
+        { name: "Espresso (Bohnen)", quantity: 18, unit: "g", costPerUnit: 0.012 },
+        { name: "Milch", quantity: 170, unit: "ml", costPerUnit: 0.0015 },
+        { name: "Schokosauce", quantity: 20, unit: "ml", costPerUnit: 0.01 },
+      ],
+    },
+    {
+      name: "Butter Croissant",
+      category: "bakery",
+      sellPrice: 2.5,
+      ingredients: [
+        { name: "Teigling", quantity: 1, unit: "stk", costPerUnit: 0.42 },
+        { name: "Butter", quantity: 10, unit: "g", costPerUnit: 0.008 },
+      ],
+    },
+    {
+      name: "Pain au Chocolat",
+      category: "bakery",
+      sellPrice: 2.9,
+      ingredients: [
+        { name: "Teigling", quantity: 1, unit: "stk", costPerUnit: 0.45 },
+        { name: "Schokolade", quantity: 18, unit: "g", costPerUnit: 0.012 },
+      ],
+    },
+    {
+      name: "Zimtschnecke Premium",
+      category: "bakery",
+      sellPrice: 3.3,
+      ingredients: [
+        { name: "Hefeteig", quantity: 1, unit: "stk", costPerUnit: 0.4 },
+        { name: "Zimtfuellung", quantity: 25, unit: "g", costPerUnit: 0.009 },
+      ],
+    },
+    {
+      name: "Blaubeer Muffin",
+      category: "bakery",
+      sellPrice: 2.9,
+      ingredients: [
+        { name: "Muffinbasis", quantity: 1, unit: "stk", costPerUnit: 0.46 },
+        { name: "Blaubeeren", quantity: 18, unit: "g", costPerUnit: 0.015 },
+      ],
+    },
+    {
+      name: "Banana Bread Slice",
+      category: "bakery",
+      sellPrice: 3.4,
+      ingredients: [
+        { name: "Bananenbrot", quantity: 1, unit: "stk", costPerUnit: 0.62 },
+        { name: "Walnuesse", quantity: 8, unit: "g", costPerUnit: 0.02 },
+      ],
+    },
+  ] as const;
+
+  for (const recipeDef of recipeDefs) {
+    const recipe = await prisma.recipe.create({
+      data: {
+        name: recipeDef.name,
+        category: recipeDef.category,
+        sellPrice: recipeDef.sellPrice,
+      },
+    });
+    await prisma.recipeIngredient.createMany({
+      data: recipeDef.ingredients.map((ingredient) => ({
+        recipeId: recipe.id,
+        ...ingredient,
+      })),
+    });
+  }
 
   // ─── Suppliers ───────────────────────────────────────
   const supplier1 = await prisma.supplier.create({
@@ -534,14 +736,14 @@ async function main() {
   ];
   for (const t of haccpTemplates) {
     const template = await prisma.hACCPTemplate.create({ data: t });
-    for (let day = 0; day < 14; day++) {
+    for (let day = 0; day < RECENT_DAYS; day++) {
       if (daysAgo(day).getDay() === 0) continue;
       await prisma.hACCPCheck.create({
         data: {
           templateId: template.id,
           date: daysAgo(day),
-          value: t.category === "temperatur" ? `${(3 + Math.random() * 3).toFixed(1)}` : "OK",
-          isCompliant: Math.random() > 0.05,
+          value: t.category === "temperatur" ? `${(3 + randFloat(0, 3)).toFixed(1)}` : "OK",
+          isCompliant: randFloat(0, 1) > 0.05,
           performedBy: pick(["Max", "Julia", "Thomas"]),
         },
       });
@@ -559,7 +761,7 @@ async function main() {
   ];
   for (const ct of cleaningTasks) {
     const task = await prisma.cleaningTask.create({ data: { ...ct, frequency: "daily" } });
-    for (let day = 0; day < 7; day++) {
+    for (let day = 0; day < WEEK_DAYS; day++) {
       if (daysAgo(day).getDay() === 0) continue;
       await prisma.cleaningLog.create({
         data: { taskId: task.id, date: daysAgo(day), completedBy: pick(["Max", "Julia", "Thomas"]) },
@@ -567,21 +769,8 @@ async function main() {
     }
   }
 
-  // ─── Customer Counts ─────────────────────────────────
-  for (let day = 1; day <= 14; day++) {
-    const date = daysAgo(day);
-    if (date.getDay() === 0) continue;
-    const dowMult = DOW_MULTIPLIER[date.getDay()];
-    for (let hour = 7; hour <= 17; hour++) {
-      const count = Math.max(0, Math.round(12 * dowMult * (hour >= 8 && hour <= 10 ? 1.5 : hour >= 12 && hour <= 13 ? 1.2 : 0.7) * (rand(70, 130) / 100)));
-      if (count > 0) {
-        await prisma.customerCount.create({ data: { date, hour, count } });
-      }
-    }
-  }
-
   // ─── Labor Entries ───────────────────────────────────
-  for (let day = 1; day <= 14; day++) {
+  for (let day = 1; day <= RECENT_DAYS; day++) {
     const date = daysAgo(day);
     if (date.getDay() === 0) continue;
     for (const sm of staffMembers) {
@@ -613,9 +802,11 @@ async function main() {
   });
 
   console.log("✅ Database seeded successfully!");
+  console.log(`   Demo mode: ${demoMode} (${DEMO_DAYS} Tage)`);
+  console.log(`   Seed mode: ${seedText ? `reproducible (${seedText})` : "randomized"}`);
   console.log(`   ${products.length} products`);
   console.log(`   ${staffMembers.length} staff members`);
-  console.log("   30 days of sales, weather, and waste data");
+  console.log(`   ${DEMO_DAYS} days of sales, weather, and waste data`);
   console.log("   + Recipes, Suppliers, HACCP, Cleaning, Expenses, Cash");
 }
 

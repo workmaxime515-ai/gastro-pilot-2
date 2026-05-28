@@ -93,7 +93,12 @@ export const ModelName = {
   MenuPlan: 'MenuPlan',
   MenuPlanItem: 'MenuPlanItem',
   AppLog: 'AppLog',
-  CoachMessage: 'CoachMessage'
+  CoachMessage: 'CoachMessage',
+  Ingredient: 'Ingredient',
+  SaleEvent: 'SaleEvent',
+  InventoryLedger: 'InventoryLedger',
+  FinanceLedger: 'FinanceLedger',
+  ManagerAlert: 'ManagerAlert'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -471,6 +476,7 @@ export type ConfidenceModifierScalarFieldEnum = (typeof ConfidenceModifierScalar
 
 export const RecipeScalarFieldEnum = {
   id: 'id',
+  productId: 'productId',
   name: 'name',
   category: 'category',
   sellPrice: 'sellPrice',
@@ -695,6 +701,77 @@ export const CoachMessageScalarFieldEnum = {
 } as const
 
 export type CoachMessageScalarFieldEnum = (typeof CoachMessageScalarFieldEnum)[keyof typeof CoachMessageScalarFieldEnum]
+
+
+export const IngredientScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  unit: 'unit',
+  stockQty: 'stockQty',
+  minStock: 'minStock',
+  costPerUnit: 'costPerUnit',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type IngredientScalarFieldEnum = (typeof IngredientScalarFieldEnum)[keyof typeof IngredientScalarFieldEnum]
+
+
+export const SaleEventScalarFieldEnum = {
+  id: 'id',
+  productId: 'productId',
+  quantity: 'quantity',
+  unitPrice: 'unitPrice',
+  revenue: 'revenue',
+  cogs: 'cogs',
+  cogsStatus: 'cogsStatus',
+  source: 'source',
+  externalId: 'externalId',
+  soldAt: 'soldAt'
+} as const
+
+export type SaleEventScalarFieldEnum = (typeof SaleEventScalarFieldEnum)[keyof typeof SaleEventScalarFieldEnum]
+
+
+export const InventoryLedgerScalarFieldEnum = {
+  id: 'id',
+  ingredientId: 'ingredientId',
+  saleEventId: 'saleEventId',
+  deltaQty: 'deltaQty',
+  balanceAfter: 'balanceAfter',
+  reason: 'reason',
+  createdAt: 'createdAt'
+} as const
+
+export type InventoryLedgerScalarFieldEnum = (typeof InventoryLedgerScalarFieldEnum)[keyof typeof InventoryLedgerScalarFieldEnum]
+
+
+export const FinanceLedgerScalarFieldEnum = {
+  id: 'id',
+  saleEventId: 'saleEventId',
+  type: 'type',
+  amount: 'amount',
+  productId: 'productId',
+  date: 'date',
+  notes: 'notes'
+} as const
+
+export type FinanceLedgerScalarFieldEnum = (typeof FinanceLedgerScalarFieldEnum)[keyof typeof FinanceLedgerScalarFieldEnum]
+
+
+export const ManagerAlertScalarFieldEnum = {
+  id: 'id',
+  type: 'type',
+  title: 'title',
+  message: 'message',
+  action: 'action',
+  productId: 'productId',
+  ingredientId: 'ingredientId',
+  isRead: 'isRead',
+  createdAt: 'createdAt'
+} as const
+
+export type ManagerAlertScalarFieldEnum = (typeof ManagerAlertScalarFieldEnum)[keyof typeof ManagerAlertScalarFieldEnum]
 
 
 export const SortOrder = {

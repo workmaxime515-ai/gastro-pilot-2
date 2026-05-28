@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "@/i18n";
 import { AnimatedNumber } from "@/components/animations";
+import { toArray } from "@/lib/api-helpers";
 
 interface Expense {
   id: string;
@@ -46,7 +47,20 @@ export default function FinanzenPage() {
   const [monthlyRevenue, setMonthlyRevenue] = useState(0);
   const [laborData, setLaborData] = useState<LaborData>({ totalHours: 0, totalCost: 0 });
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"overview" | "expenses" | "goals">("overview");
+  const [tab, setTab] = useState<"ledger" | "expenses" | "goals">("ledger");
+  const [period, setPeriod] = useState<"day" | "month" | "year">("day");
+  const [ledger, setLedger] = useState<{
+    revenue: number;
+    cogs: number;
+    grossProfit: number;
+    fixedCosts: number;
+    profit: number;
+    foodCostPercent: number;
+  } | null>(null);
+  const [ledgerSales, setLedgerSales] = useState<
+    { id: string; quantity: number; revenue: number; cogs: number; soldAt: string; product: { name: string } }[]
+  >([]);
+  const [showWhy, setShowWhy] = useState(false);
 
   // Expense form
   const [showExpForm, setShowExpForm] = useState(false);
@@ -59,6 +73,45 @@ export default function FinanzenPage() {
 
   const month = getCurrentMonth();
 
+  const fetchLedger = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/manager/finance?period=${period}&sales=true`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setLedger({
+        revenue: data.revenue ?? 0,
+        cogs: data.cogs ?? 0,
+        grossProfit: data.grossProfit ?? 0,
+        fixedCosts: data.fixedCosts ?? 0,
+        profit: data.profit ?? 0,
+        foodCostPercent: data.foodCostPercent ?? 0,
+      });
+      setLedgerSales(
+        Array.isArray(data.sales)
+          ? data.sales.map(
+              (s: {
+                id: string;
+                quantity: number;
+                revenue: number;
+                cogs: number;
+                soldAt: string;
+                product: { name: string };
+              }) => ({
+                id: s.id,
+                quantity: s.quantity,
+                revenue: s.revenue,
+                cogs: s.cogs,
+                soldAt: s.soldAt,
+                product: { name: s.product?.name ?? "—" },
+              })
+            )
+          : []
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [period]);
+
   const fetchData = useCallback(async () => {
     try {
       const [expRes, goalRes, salesRes, laborRes] = await Promise.all([
@@ -70,11 +123,11 @@ export default function FinanzenPage() {
 
       if (expRes.ok) {
         const expData = await expRes.json();
-        setExpenses(Array.isArray(expData) ? expData : expData.items ?? []);
+        setExpenses(toArray<Expense>(expData));
       }
       if (goalRes.ok) {
         const goalData = await goalRes.json();
-        setGoals(Array.isArray(goalData) ? goalData : goalData.items ?? []);
+        setGoals(toArray<RevenueGoal>(goalData));
       }
       if (salesRes.ok) {
         const data = await salesRes.json();
@@ -88,7 +141,16 @@ export default function FinanzenPage() {
     finally { setLoading(false); }
   }, [month]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (tab === "ledger") {
+      setLoading(true);
+      void fetchLedger().finally(() => setLoading(false));
+    }
+  }, [tab, fetchLedger]);
 
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
   const netProfit = monthlyRevenue - totalExpenses;
@@ -138,12 +200,12 @@ export default function FinanzenPage() {
     <div className="space-y-6 pb-8">
       <header>
         <h1 className="text-greeting">{t("finanzen.title")}</h1>
-        <p className="text-meta mt-1">{t("finanzen.monthlyOverview")}</p>
+        <p className="text-meta mt-1">{t("finanzen.fromSales")}</p>
       </header>
 
       {/* Tab selector */}
       <div className="card flex p-1 gap-1">
-        {(["overview", "expenses", "goals"] as const).map((tabKey) => (
+        {(["ledger", "expenses", "goals"] as const).map((tabKey) => (
           <button
             key={tabKey}
             type="button"
@@ -154,7 +216,11 @@ export default function FinanzenPage() {
                 : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
             }`}
           >
-            {tabKey === "overview" ? t("finanzen.monthlyOverview") : tabKey === "expenses" ? t("finanzen.expenses") : t("finanzen.revenueGoals")}
+            {tabKey === "ledger"
+              ? t("finanzen.fromSales")
+              : tabKey === "expenses"
+                ? t("finanzen.extrasTab")
+                : t("finanzen.revenueGoals")}
           </button>
         ))}
       </div>
@@ -167,118 +233,123 @@ export default function FinanzenPage() {
         </div>
       ) : (
         <>
-          {/* Overview */}
-          {tab === "overview" && (
+          {/* Ledger (sales-driven) */}
+          {tab === "ledger" && ledger && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="card">
-                  <p className="text-meta">{t("finanzen.monthlyRevenue")}</p>
-                  <p className="text-card-title text-number" style={{ color: "var(--color-accent-profit)" }}>
-                    <AnimatedNumber value={monthlyRevenue} prefix="EUR " decimals={2} />
-                  </p>
-                </div>
-                <div className="card">
-                  <p className="text-meta">{t("finanzen.expenses")} ({t("common.month")})</p>
-                  <p className="text-card-title text-number" style={{ color: "var(--color-accent-waste)" }}>
-                    <AnimatedNumber value={totalExpenses} prefix="EUR " decimals={2} />
-                  </p>
-                </div>
+              <div
+                role="group"
+                aria-label="Zeitraum"
+                className="flex flex-wrap gap-2"
+              >
+                {(["day", "month", "year"] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPeriod(p)}
+                    className={`min-h-[40px] rounded-lg px-3 text-sm font-medium ${
+                      period === p
+                        ? "bg-accent text-white"
+                        : "border border-text-secondary/20 text-text-secondary"
+                    }`}
+                  >
+                    {p === "day"
+                      ? t("finanzen.periodDay")
+                      : p === "month"
+                        ? t("finanzen.periodMonth")
+                        : t("finanzen.periodYear")}
+                  </button>
+                ))}
               </div>
 
-              <div className="card">
+              <div className="card text-center py-6">
                 <p className="text-meta">{t("finanzen.netProfit")}</p>
                 <p
-                  className="text-greeting text-number"
+                  className="text-4xl font-bold text-number mt-1"
                   style={{
-                    color: netProfit >= 0 ? "var(--color-accent-profit)" : "var(--color-accent-warning)",
+                    color:
+                      ledger.profit >= 0
+                        ? "var(--color-accent-profit)"
+                        : "var(--color-accent-warning)",
                   }}
                 >
-                  <AnimatedNumber value={netProfit} prefix={netProfit >= 0 ? "+" : ""} suffix=" EUR" decimals={2} />
+                  <AnimatedNumber value={ledger.profit} suffix=" €" decimals={2} />
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="card">
-                  <p className="text-meta">{t("finanzen.foodCost")}</p>
-                  <p
-                    className="text-card-title text-number"
-                    style={{
-                      color: foodCostPercent <= 30 ? "var(--color-accent-profit)" : foodCostPercent <= 35 ? "var(--color-accent-primary)" : "var(--color-accent-warning)",
-                    }}
-                  >
-                    <AnimatedNumber value={foodCostPercent} decimals={1} suffix="%" />
+                  <p className="text-meta">{t("finanzen.revenue")}</p>
+                  <p className="text-card-title text-number text-[var(--color-accent-profit)]">
+                    {ledger.revenue.toFixed(2)} €
                   </p>
-                  <p className="text-meta mt-1">{t("finanzen.targetBelow30")}</p>
                 </div>
                 <div className="card">
-                  <p className="text-meta">{t("finanzen.laborCost")}</p>
-                  <p
-                    className="text-card-title text-number"
-                    style={{
-                      color: laborCostPercent <= 30 ? "var(--color-accent-profit)" : laborCostPercent <= 35 ? "var(--color-accent-primary)" : "var(--color-accent-warning)",
-                    }}
-                  >
-                    <AnimatedNumber value={laborCostPercent} decimals={1} suffix="%" />
+                  <p className="text-meta">{t("finanzen.cogs")}</p>
+                  <p className="text-card-title text-number">
+                    {ledger.cogs.toFixed(2)} €
                   </p>
-                  <p className="text-meta mt-1">{t("finanzen.targetBelow30")}</p>
+                </div>
+                <div className="card">
+                  <p className="text-meta">{t("finanzen.grossProfit")}</p>
+                  <p className="text-card-title text-number">
+                    {ledger.grossProfit.toFixed(2)} €
+                  </p>
+                </div>
+                <div className="card">
+                  <p className="text-meta">{t("finanzen.fixedCosts")}</p>
+                  <p className="text-card-title text-number">
+                    {ledger.fixedCosts.toFixed(2)} €
+                  </p>
                 </div>
               </div>
 
-              {/* Labor details */}
-              {laborData.totalHours > 0 && (
-                <div className="card">
-                  <p className="text-meta font-semibold uppercase tracking-wide mb-2">{t("finanzen.laborDetails")}</p>
-                  <div className="flex justify-between text-sm py-1">
-                    <span>Stunden gearbeitet</span>
-                    <span className="text-number">{laborData.totalHours.toFixed(1)}h</span>
-                  </div>
-                  <div className="flex justify-between text-sm py-1">
-                    <span>Lohnkosten (Stunden)</span>
-                    <span className="text-number">{laborData.totalCost.toFixed(2)} EUR</span>
-                  </div>
-                  {personalExpenses > 0 && (
-                    <div className="flex justify-between text-sm py-1">
-                      <span>Sonstige Personalkosten</span>
-                      <span className="text-number">{personalExpenses.toFixed(2)} EUR</span>
-                    </div>
-                  )}
-                  <div className="mt-1 border-t pt-1 flex justify-between text-sm font-medium" style={{ borderColor: "var(--color-border-subtle)" }}>
-                    <span>{t("common.total")}</span>
-                    <span className="text-number">{totalLaborCost.toFixed(2)} EUR</span>
-                  </div>
-                </div>
-              )}
+              <div className="card">
+                <p className="text-meta">{t("finanzen.foodCost")}</p>
+                <p className="text-card-title text-number">
+                  {ledger.foodCostPercent.toFixed(1)}%
+                </p>
+              </div>
 
-              {/* Revenue goals */}
-              {goals.length > 0 && (
-                <div className="card">
-                  <p className="text-meta font-semibold uppercase tracking-wide mb-2">{t("finanzen.revenueGoals")}</p>
-                  {goals.map((g) => {
-                    const progress = g.targetAmount > 0 ? Math.min(100, (monthlyRevenue / g.targetAmount) * 100) : 0;
-                    return (
-                      <div key={g.id} className="mb-2">
-                        <div className="flex justify-between text-sm">
-                          <span>{g.period === "monthly" ? "Monatsziel" : g.period === "weekly" ? "Wochenziel" : "Tagesziel"}</span>
-                          <span className="text-number">{Math.round(progress)}%</span>
-                        </div>
-                        <div className="mt-1 h-1.5 w-full rounded-full" style={{ backgroundColor: "var(--color-track-bg)" }}>
-                          <div
-                            className="h-full rounded-full transition-all duration-300"
-                            style={{
-                              width: `${progress}%`,
-                              backgroundColor: progress >= 100 ? "var(--color-accent-profit)" : "var(--color-accent-primary)",
-                            }}
-                          />
-                        </div>
-                        <p className="text-meta mt-0.5">
-                          {monthlyRevenue.toFixed(0)} / {g.targetAmount.toFixed(0)} EUR
-                        </p>
+              <button
+                type="button"
+                onClick={() => setShowWhy(!showWhy)}
+                className="btn-secondary w-full min-h-[48px]"
+              >
+                {t("finanzen.whySales")}
+              </button>
+
+              {showWhy && (
+                <div className="card space-y-2">
+                  {ledgerSales.length === 0 ? (
+                    <p className="text-meta">{t("finanzen.noSalesInPeriod")}</p>
+                  ) : (
+                    ledgerSales.map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex justify-between text-sm border-b border-text-secondary/10 py-2 last:border-0"
+                      >
+                        <span>
+                          {s.quantity}× {s.product.name}
+                          <span className="text-meta block text-xs">
+                            {new Date(s.soldAt).toLocaleString("de-DE")}
+                          </span>
+                        </span>
+                        <span className="text-number text-right">
+                          +{s.revenue.toFixed(2)} €
+                          <span className="text-meta block text-xs">
+                            COGS {s.cogs.toFixed(2)} €
+                          </span>
+                        </span>
                       </div>
-                    );
-                  })}
+                    ))
+                  )}
                 </div>
               )}
             </div>
+          )}
+
+          {tab === "ledger" && !ledger && !loading && (
+            <p className="text-meta">{t("common.noData")}</p>
           )}
 
           {/* Expenses tab */}

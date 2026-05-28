@@ -42,7 +42,8 @@ export async function GET(req: NextRequest) {
       const withCosts = recipes.map((r) => {
         const totalCost = r.ingredients.reduce((s, i) => s + i.quantity * i.costPerUnit, 0);
         const margin = r.sellPrice > 0 ? ((r.sellPrice - totalCost) / r.sellPrice) * 100 : 0;
-        return { ...r, totalCost, margin };
+        const contributionPerServing = r.sellPrice - totalCost;
+        return { ...r, totalCost, margin, contributionPerServing };
       });
       return NextResponse.json(withCosts);
     }
@@ -54,7 +55,8 @@ export async function GET(req: NextRequest) {
     const withCosts = recipes.map((r) => {
       const totalCost = r.ingredients.reduce((s, i) => s + i.quantity * i.costPerUnit, 0);
       const margin = r.sellPrice > 0 ? ((r.sellPrice - totalCost) / r.sellPrice) * 100 : 0;
-      return { ...r, totalCost, margin };
+      const contributionPerServing = r.sellPrice - totalCost;
+      return { ...r, totalCost, margin, contributionPerServing };
     });
     return NextResponse.json(paginatedResponse(withCosts, total, params));
   } catch (e) {
@@ -65,7 +67,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, category, sellPrice, servings, prepTimeMin, notes, ingredients } = body;
+    const { name, category, sellPrice, servings, prepTimeMin, notes, ingredients, productId } = body;
     if (!name) return NextResponse.json({ error: "Name erforderlich" }, { status: 400 });
 
     const recipe = await prisma.recipe.create({
@@ -76,6 +78,7 @@ export async function POST(req: NextRequest) {
         servings: parseInt(servings) || 1,
         prepTimeMin: parseInt(prepTimeMin) || 0,
         notes: notes || null,
+        productId: typeof productId === "string" && productId.length > 0 ? productId : null,
         ingredients: {
           create: (ingredients || []).map((i: { name: string; quantity: number; unit: string; costPerUnit: number }) => ({
             name: i.name,
@@ -116,6 +119,10 @@ export async function PUT(req: NextRequest) {
       if (data.sellPrice != null) updateData.sellPrice = parseFloat(data.sellPrice);
       if (data.servings != null) updateData.servings = parseInt(data.servings);
       if (data.isActive !== undefined) updateData.isActive = data.isActive;
+      if (data.productId !== undefined) {
+        updateData.productId =
+          typeof data.productId === "string" && data.productId.length > 0 ? data.productId : null;
+      }
 
       return tx.recipe.update({
         where: { id },

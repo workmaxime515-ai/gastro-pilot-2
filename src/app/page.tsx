@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useT } from "@/i18n";
 import { StrategySelector } from "@/components/StrategySelector";
 import { Tutorial } from "@/components/Tutorial";
@@ -9,6 +9,10 @@ import { SuggestionCard } from "@/components/SuggestionCard";
 import { TomorrowSection } from "@/components/TomorrowSection";
 import { SOSButton } from "@/components/SOSButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { QuickLauncher } from "@/components/QuickLauncher";
+import { QuickSale } from "@/components/QuickSale";
+import { ManagerAlerts } from "@/components/ManagerAlerts";
+import { toArray } from "@/lib/api-helpers";
 import Link from "next/link";
 import {
   PenLine,
@@ -96,10 +100,47 @@ interface TrendDay {
   dayOfWeek: number;
 }
 
+interface CostSnapshot {
+  fixedCostsDaily: number;
+  wasteCost: number;
+  grossAfterCosts: number;
+  netProfit?: number;
+  expensesToday?: number;
+  laborCost?: number;
+}
+
+interface KpiExplain {
+  customers?: {
+    formula: string;
+    source: string;
+    manualSum: number;
+    quantitySold: number;
+    estimated: number;
+  };
+  netProfit?: {
+    formula: string;
+    parts: Record<string, number>;
+  };
+}
+
+function netProfitColor(value: number): string {
+  if (value < 0) return "var(--color-accent-stress)";
+  if (value === 0) return "var(--color-text-secondary)";
+  return "var(--color-accent-profit)";
+}
+
+interface QuickNote {
+  id: string;
+  text: string;
+  category: string;
+  date: string;
+}
+
 const QUICK_ACTIONS = [
   { href: "/eingabe", labelKey: "home.quickSale", icon: PenLine, color: "var(--color-accent-primary)" },
   { href: "/abend", labelKey: "home.quickRegister", icon: Wallet, color: "var(--color-accent-profit)" },
   { href: "/haccp", labelKey: "home.quickHACCP", icon: ShieldCheck, color: "var(--color-accent-stress)" },
+  { href: "/finanzen", labelKey: "home.quickFinanzen", icon: Wallet, color: "var(--color-accent-primary)" },
 ];
 
 export default function Home() {
@@ -113,17 +154,85 @@ export default function Home() {
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
   const [trends, setTrends] = useState<TrendDay[]>([]);
   const [wasteToday, setWasteToday] = useState(0);
-  const [inventoryAlerts, setInventoryAlerts] = useState<{type: string; severity: string; message: string}[]>([]);
+  const [inventoryAlerts, setInventoryAlerts] = useState<{type: string; severity: string; message: string; action?: string}[]>([]);
+  const [recentNotes, setRecentNotes] = useState<QuickNote[]>([]);
+  const [costSnapshot, setCostSnapshot] = useState<CostSnapshot | null>(null);
+  const [kpiExplain, setKpiExplain] = useState<KpiExplain | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [managerToday, setManagerToday] = useState<{
+    profit: number;
+    revenue: number;
+    cogs: number;
+    breakEvenRemaining: number;
+    breakEvenAchieved: boolean;
+  } | null>(null);
+
+  const refreshManagerToday = useCallback(() => {
+    fetch("/api/manager/today")
+      .then(async (r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && typeof d.profit === "number") {
+          setManagerToday({
+            profit: d.profit,
+            revenue: d.revenue ?? 0,
+            cogs: d.cogs ?? 0,
+            breakEvenRemaining: d.breakEvenRemaining ?? 0,
+            breakEvenAchieved: Boolean(d.breakEvenAchieved),
+          });
+        }
+      })
+      .catch((e) => console.warn("Manager today fetch error:", e));
+  }, []);
 
   useEffect(() => {
     async function fetchData() {
       try {
         const res = await fetch("/api/suggestions");
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? "Fehler beim Laden");
-        setData(json);
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setData({
+            suggestions: [],
+            tomorrowSuggestions: [],
+            breakEven: {
+              dailyCost: 0,
+              currentRevenue: 0,
+              remainingTarget: 0,
+              coffeeEquivalent: 0,
+              isAchieved: false,
+            },
+            strategyMode: "balanced",
+          });
+          return;
+        }
+        const breakEven = (json as ApiResponse).breakEven;
+        setData({
+          suggestions: toArray<SuggestionProps>((json as { suggestions?: unknown })?.suggestions),
+          tomorrowSuggestions: toArray<SuggestionProps>((json as { tomorrowSuggestions?: unknown })?.tomorrowSuggestions),
+          breakEven: breakEven ?? {
+            dailyCost: 0,
+            currentRevenue: 0,
+            remainingTarget: 0,
+            coffeeEquivalent: 0,
+            isAchieved: false,
+          },
+          strategyMode: (json as ApiResponse).strategyMode ?? "balanced",
+          dataQuality: (json as ApiResponse).dataQuality,
+        });
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+        console.warn("Home suggestions fetch error:", e);
+        setData({
+          suggestions: [],
+          tomorrowSuggestions: [],
+          breakEven: {
+            dailyCost: 0,
+            currentRevenue: 0,
+            remainingTarget: 0,
+            coffeeEquivalent: 0,
+            isAchieved: false,
+          },
+          strategyMode: "balanced",
+        });
+        setError(null);
       } finally {
         setLoading(false);
       }
@@ -132,23 +241,42 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      setLastUpdated(localStorage.getItem("gastro-demo-last-updated"));
+    }
+
     fetch("/api/dashboard/kpis")
-      .then((r) => r.json())
+      .then(async (r) => (r.ok ? r.json() : {}))
       .then((d) => {
-        if (d.shopName) setShopName(d.shopName);
+        if (typeof d.shopName === "string" && d.shopName.trim()) setShopName(d.shopName);
         if (typeof d.todayCustomers === "number") setCustomerCount(d.todayCustomers);
         if (typeof d.todayWaste === "number") setWasteToday(d.todayWaste);
-        if (d.weather) setWeather(d.weather);
-        if (Array.isArray(d.trends)) setTrends(d.trends);
-        if (d.revenueGoal) setRevenueGoal(d.revenueGoal);
+        if (d.weather && typeof d.weather === "object") setWeather(d.weather as WeatherInfo);
+        setTrends(toArray<TrendDay>(d.trends));
+        if (d.revenueGoal && typeof d.revenueGoal === "object") setRevenueGoal(d.revenueGoal as RevenueGoal);
+        if (d.costSnapshot && typeof d.costSnapshot === "object") setCostSnapshot(d.costSnapshot as CostSnapshot);
+        if (d.kpiExplain && typeof d.kpiExplain === "object") setKpiExplain(d.kpiExplain as KpiExplain);
       })
       .catch((e) => console.warn("Home fetch error:", e));
 
     fetch("/api/inventory/alerts")
-      .then((r) => r.json())
-      .then((d) => { if (d.alerts) setInventoryAlerts(d.alerts.slice(0, 3)); })
+      .then(async (r) => (r.ok ? r.json() : {}))
+      .then((d) => {
+        const alerts = toArray<{type: string; severity: string; message: string; action?: string}>(d.alerts);
+        setInventoryAlerts(alerts.slice(0, 3));
+      })
       .catch((e) => console.warn("Home fetch error:", e));
-  }, []);
+
+    fetch("/api/quick-notes?all=true")
+      .then(async (r) => (r.ok ? r.json() : []))
+      .then((d) => {
+        const notes = toArray<QuickNote>(d);
+        setRecentNotes(notes.slice(0, 3));
+      })
+      .catch((e) => console.warn("Home quick notes fetch error:", e));
+
+    refreshManagerToday();
+  }, [refreshManagerToday]);
 
   const greeting = t(getGreetingKey());
   const dateStr = formatDateDE();
@@ -178,11 +306,11 @@ export default function Home() {
         </div>
         <div className="card stripe-warning" role="alert">
           <p className="text-sm font-medium" style={{ color: "var(--color-accent-warning)" }}>
-            Laden fehlgeschlagen
+            {t("common.loadFailed")}
           </p>
           <p className="text-meta mt-1">{error}</p>
           <button onClick={() => window.location.reload()} className="btn-primary mt-3 text-sm">
-            Nochmal versuchen
+            {t("common.retry")}
           </button>
         </div>
       </div>
@@ -227,6 +355,9 @@ export default function Home() {
           </h1>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-meta">{dateStr}</p>
+              {lastUpdated && (
+                <span className="text-meta">• Updated {new Date(lastUpdated).toLocaleTimeString()}</span>
+              )}
             {weather && (
               <span className="flex items-center gap-1 text-meta">
                 <WeatherIcon size={14} />
@@ -238,6 +369,38 @@ export default function Home() {
         <ThemeToggle />
       </header>
 
+      {managerToday && (
+        <div className="card text-center py-6 px-4">
+          <p className="text-meta mb-1">{t("manager.profitToday")}</p>
+          <p
+            className="text-4xl font-bold text-number"
+            style={{ color: netProfitColor(managerToday.profit) }}
+          >
+            {managerToday.profit.toFixed(2)} €
+          </p>
+          <p className="text-meta mt-2">
+            {managerToday.breakEvenAchieved
+              ? t("manager.breakEvenDone")
+              : t("manager.breakEvenRemaining").replace(
+                  "{amount}",
+                  managerToday.breakEvenRemaining.toFixed(0)
+                )}
+          </p>
+          {managerToday.revenue > 0 && (
+            <p className="text-meta mt-1">
+              Food Cost:{" "}
+              {((managerToday.cogs / managerToday.revenue) * 100).toFixed(1)}%
+            </p>
+          )}
+        </div>
+      )}
+
+      <ManagerAlerts />
+
+      <QuickSale onSold={refreshManagerToday} />
+
+      <QuickLauncher />
+
       {/* KPI Strip */}
       <div className="grid grid-cols-3 gap-3">
         <div className="card text-center py-3">
@@ -245,21 +408,21 @@ export default function Home() {
           <p className="text-number text-lg font-semibold" style={{ color: "var(--color-accent-profit)" }}>
             {todayRevenue.toFixed(0)}
           </p>
-          <p className="text-meta">Umsatz</p>
+          <p className="text-meta">{t("common.revenue")}</p>
         </div>
         <div className="card text-center py-3">
-          <Users size={16} className="mx-auto mb-1" style={{ color: "var(--color-accent-stress)" }} />
-          <p className="text-number text-lg font-semibold" style={{ color: "var(--color-accent-stress)" }}>
+          <Users size={16} className="mx-auto mb-1" style={{ color: "var(--color-accent-primary)" }} />
+          <p className="text-number text-lg font-semibold" style={{ color: "var(--color-accent-primary)" }}>
             {customerCount}
           </p>
-          <p className="text-meta">Kunden</p>
+          <p className="text-meta">{t("home.customers")}</p>
         </div>
         <div className="card text-center py-3">
           <Trash2 size={16} className="mx-auto mb-1" style={{ color: "var(--color-accent-waste)" }} />
           <p className="text-number text-lg font-semibold" style={{ color: "var(--color-accent-waste)" }}>
             {wasteToday}
           </p>
-          <p className="text-meta">Waste</p>
+          <p className="text-meta">{t("home.waste")}</p>
         </div>
       </div>
 
@@ -272,17 +435,38 @@ export default function Home() {
           </div>
           <div className="space-y-1.5">
             {inventoryAlerts.map((alert, i) => (
-              <div key={i} className="flex items-center gap-2 text-sm">
-                <Package size={12} style={{ color: alert.severity === "high" ? "var(--color-accent-warning)" : "var(--color-accent-waste)" }} />
-                <span className="text-meta">{alert.message}</span>
+              <div key={i} className="text-sm">
+                <div className="flex items-center gap-2">
+                  <Package size={12} style={{ color: alert.severity === "high" ? "var(--color-accent-warning)" : "var(--color-accent-waste)" }} />
+                  <span className="text-meta">{alert.message}</span>
+                </div>
+                {alert.action && (
+                  <p className="ml-5 text-xs text-text-secondary dark:text-dark-text-secondary">{alert.action}</p>
+                )}
+                {"workflow" in alert && Array.isArray((alert as { workflow?: string[] }).workflow) && (
+                  <p className="ml-5 text-[11px] text-text-secondary dark:text-dark-text-secondary">
+                    {(alert as { workflow?: string[] }).workflow?.[0]}
+                  </p>
+                )}
               </div>
             ))}
           </div>
         </div>
       )}
+      {inventoryAlerts.length === 0 && (
+        <div className="card">
+          <p className="text-sm text-text-secondary dark:text-dark-text-secondary">
+            Kein akutes Bestandsrisiko. Fuehre am Abend einen kurzen 86-Check durch.
+          </p>
+        </div>
+      )}
 
       {/* Break-Even */}
-      {breakEven && <BreakEvenBar {...breakEven} />}
+      {breakEven && (
+        <div data-tutorial-anchor="breakeven">
+          <BreakEvenBar {...breakEven} />
+        </div>
+      )}
 
       {/* Revenue Goal */}
       {revenueGoal && (
@@ -304,6 +488,46 @@ export default function Home() {
             }} />
           </div>
           <p className="text-meta mt-1">{revenueGoal.actualAmount.toFixed(0)} / {revenueGoal.targetAmount.toFixed(0)} EUR</p>
+        </div>
+      )}
+
+      {costSnapshot && (
+        <div className="card space-y-3">
+          <p className="text-sm font-medium">{t("home.costProfitSnapshot")}</p>
+          <div className="space-y-1 text-sm">
+            <p className="text-text-secondary dark:text-dark-text-secondary">
+              {t("home.fixedToday")}: {costSnapshot.fixedCostsDaily.toFixed(2)} EUR
+            </p>
+            {(costSnapshot.laborCost ?? 0) > 0 && (
+              <p className="text-text-secondary dark:text-dark-text-secondary">
+                {t("home.laborToday")}: {(costSnapshot.laborCost ?? 0).toFixed(2)} EUR
+              </p>
+            )}
+            <p className="text-text-secondary dark:text-dark-text-secondary">
+              {t("home.wasteCostToday")}: {costSnapshot.wasteCost.toFixed(2)} EUR
+            </p>
+            <p className="text-text-secondary dark:text-dark-text-secondary">
+              {t("home.expensesToday")}: {(costSnapshot.expensesToday ?? 0).toFixed(2)} EUR
+            </p>
+            <p className="font-semibold" style={{ color: netProfitColor(costSnapshot.netProfit ?? costSnapshot.grossAfterCosts) }}>
+              {t("home.netProfitToday")}: {(costSnapshot.netProfit ?? costSnapshot.grossAfterCosts).toFixed(2)} EUR
+            </p>
+          </div>
+          {kpiExplain?.customers && (
+            <div className="rounded-xl p-3 text-xs" style={{ backgroundColor: "var(--color-track-bg)" }}>
+              <p className="font-medium text-text-primary dark:text-dark-text-primary mb-1">{t("home.howCustomersCalculated")}</p>
+              <p className="text-text-secondary dark:text-dark-text-secondary">{kpiExplain.customers.formula}</p>
+              <p className="text-meta mt-1">
+                {t("home.source")}: {kpiExplain.customers.source} · {t("home.estimated")}: {kpiExplain.customers.estimated} · {t("home.manualSum")}: {kpiExplain.customers.manualSum} · {t("home.qtySold")}: {kpiExplain.customers.quantitySold}
+              </p>
+            </div>
+          )}
+          {kpiExplain?.netProfit && (
+            <div className="rounded-xl p-3 text-xs" style={{ backgroundColor: "var(--color-track-bg)" }}>
+              <p className="font-medium text-text-primary dark:text-dark-text-primary mb-1">{t("home.howNetProfitCalculated")}</p>
+              <p className="text-text-secondary dark:text-dark-text-secondary">{kpiExplain.netProfit.formula}</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -338,6 +562,13 @@ export default function Home() {
             <Link
               key={action.href}
               href={action.href}
+              data-tutorial-anchor={
+                action.href === "/eingabe"
+                  ? "eingabe"
+                  : action.href === "/abend"
+                    ? "abend"
+                    : undefined
+              }
               className="card card-interactive flex-1 flex flex-col items-center gap-1.5 py-3 text-center"
             >
               <Icon size={18} style={{ color: action.color }} />
@@ -358,10 +589,12 @@ export default function Home() {
       )}
 
       {/* Strategy Selector */}
-      <StrategySelector activeMode={strategyMode} />
+      <div data-tutorial-anchor="strategy">
+        <StrategySelector activeMode={strategyMode} />
+      </div>
 
       {/* Suggestions */}
-      <section aria-labelledby="suggestions-title">
+      <section aria-labelledby="suggestions-title" data-tutorial-anchor="suggestions">
         <h2 id="suggestions-title" className="text-section mb-3">
           {t("home.todayRecommendations")}
         </h2>
@@ -389,12 +622,33 @@ export default function Home() {
         </div>
       </section>
 
+      {recentNotes.length > 0 && (
+        <section className="card">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-medium">{t("common.notes")}</h2>
+            <Link href="/berichte" className="text-sm text-accent hover:underline">
+              {t("common.details")}
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {recentNotes.map((note) => (
+              <div key={note.id} className="rounded-lg bg-[var(--color-track-bg)] px-3 py-2">
+                <p className="text-sm">{note.text}</p>
+                <p className="text-meta">{note.category}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Tomorrow */}
       {tomorrowSuggestions.length > 0 && (
         <TomorrowSection suggestions={tomorrowSuggestions} />
       )}
 
-      <SOSButton />
+      <div data-tutorial-anchor="sos">
+        <SOSButton />
+      </div>
       <Tutorial />
     </div>
   );

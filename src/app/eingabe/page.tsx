@@ -3,32 +3,50 @@
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "@/i18n";
 import { useVoiceInput, parseVoiceEntry } from "@/hooks/useVoiceInput";
+import { useProducts } from "@/hooks/useProducts";
+import { toArray } from "@/lib/api-helpers";
+import { REASON_OPTIONS } from "@/constants/waste";
+import { formatDate, formatDateDisplay } from "@/lib/date";
+import { Skeleton } from "@/components/common/Skeleton";
+import { CustomerCounter } from "@/app/eingabe/components/CustomerCounter";
+import { TrendingUp, Users, Wallet, AlertTriangle, Package } from "lucide-react";
+import { QuickNoteSection } from "@/app/eingabe/components/QuickNoteSection";
+import type {
+  Product as DomainProduct,
+  InventoryItem as DomainInventoryItem,
+  SalesEntry as DomainSalesEntry,
+} from "@/types/domain";
 
-// ─── Types ─────────────────────────────────────────────────────
-
-interface Product {
-  id: string;
-  name: string;
+type Product = DomainProduct & {
   category: string;
   costPrice: number;
   sellPrice: number;
-  isActive?: boolean;
-}
+};
 
-interface InventoryItem {
+type InventoryItem = DomainInventoryItem<Product>;
+type SalesEntry = DomainSalesEntry<Product>;
+
+type IngredientRow = {
   id: string;
-  productId: string;
-  quantity: number;
-  expiresAt: string | null;
-  product: Product;
-}
+  name: string;
+  unit: string;
+  stockQty: number;
+  minStock: number | null;
+  costPerUnit: number;
+};
 
-interface SalesEntry {
-  productId: string;
-  product: Product;
-  quantity: number;
-  revenue: number;
-}
+type LedgerEntryRow = {
+  id: string;
+  ingredientName: string;
+  unit: string;
+  deltaQty: number;
+  balanceAfter: number;
+  reason: string;
+  createdAt: string;
+  productName: string | null;
+};
+
+type UnitFilter = "all" | "g" | "ml" | "l" | "stk";
 
 const CATEGORY_LABELS: Record<string, string> = {
   coffee: "Kaffee",
@@ -37,22 +55,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   drinks: "Getränke",
   other: "Sonstiges",
 };
-
-const REASON_OPTIONS = [
-  { value: "Abgelaufen", label: "Abgelaufen" },
-  { value: "Beschädigt", label: "Beschädigt" },
-  { value: "Nicht verkauft", label: "Nicht verkauft" },
-  { value: "Qualität", label: "Qualität" },
-  { value: "Sonstiges", label: "Sonstiges" },
-] as const;
-
-const QUICK_NOTE_CATEGORIES = [
-  { value: "allgemein", label: "Allgemein" },
-  { value: "verkauf", label: "Verkauf" },
-  { value: "personal", label: "Personal" },
-  { value: "lager", label: "Lager" },
-  { value: "sonstiges", label: "Sonstiges" },
-];
 
 // Plausibility: { category, min, max }
 const PLAUSIBILITY_RANGES: Record<string, { min: number; max: number }> = {
@@ -63,38 +65,19 @@ const PLAUSIBILITY_RANGES: Record<string, { min: number; max: number }> = {
   other: { min: 5, max: 50 },
 };
 
-function formatDate(d: Date): string {
-  return d.toISOString().split("T")[0]!;
-}
-
-function formatDateDisplay(d: Date): string {
-  return d.toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-// ─── Skeleton ───────────────────────────────────────────────────
-
-function Skeleton({ className = "" }: { className?: string }) {
-  return (
-    <div
-      className={`animate-pulse rounded-lg bg-text-secondary/20 ${className}`}
-      aria-hidden="true"
-    />
-  );
-}
-
 // ─── Main Page ───────────────────────────────────────────────────
 
 export default function EingabePage() {
   const { t } = useT();
   const voice = useVoiceInput("de-DE");
   const [tab, setTab] = useState<"Verkäufe" | "Inventar" | "Waste">("Verkäufe");
-  const [products, setProducts] = useState<Product[]>([]);
+  const {
+    products: rawProducts,
+    loading: loadingProducts,
+    error: productsError,
+  } = useProducts();
+  const products = rawProducts as Product[];
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState(true);
   const [loadingInventory, setLoadingInventory] = useState(false);
   const [loadingSales, setLoadingSales] = useState(false);
 
@@ -105,12 +88,26 @@ export default function EingabePage() {
 
   const [inventoryEdits, setInventoryEdits] = useState<Record<string, string>>({});
   const [inventorySaving, setInventorySaving] = useState(false);
+  const [ingredients, setIngredients] = useState<IngredientRow[]>([]);
+  const [ingredientEdits, setIngredientEdits] = useState<Record<string, string>>({});
+  const [unitFilter, setUnitFilter] = useState<UnitFilter>("all");
+  const [ingredientSaving, setIngredientSaving] = useState(false);
+  const [newIngName, setNewIngName] = useState("");
+  const [newIngUnit, setNewIngUnit] = useState<"g" | "ml" | "l" | "stk">("g");
+  const [newIngStock, setNewIngStock] = useState("");
+  const [newIngCost, setNewIngCost] = useState("");
+  const [newIngMin, setNewIngMin] = useState("");
+  const [addingIngredient, setAddingIngredient] = useState(false);
+  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntryRow[]>([]);
 
   const [wasteProductId, setWasteProductId] = useState("");
   const [wasteQuantity, setWasteQuantity] = useState(0);
   const [wasteReason, setWasteReason] = useState("Abgelaufen");
   const [wasteNotes, setWasteNotes] = useState("");
   const [wasteSaving, setWasteSaving] = useState(false);
+  const [wasteDrafts, setWasteDrafts] = useState<
+    { productId: string; productName: string; quantity: number; reason: string }[]
+  >([]);
 
   const [quickNoteText, setQuickNoteText] = useState("");
   const [quickNoteCategory, setQuickNoteCategory] = useState("allgemein");
@@ -120,15 +117,54 @@ export default function EingabePage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [customerCount, setCustomerCount] = useState(0);
   const [customerSaving, setCustomerSaving] = useState(false);
+  const [dashKpis, setDashKpis] = useState<{
+    todayRevenue: number;
+    todayCustomers: number;
+    netProfit: number;
+    todayWaste: number;
+    kpiExplain?: {
+      customers?: { formula: string; source: string; manualSum: number; quantitySold: number; estimated: number };
+      netProfit?: { formula: string };
+    };
+  } | null>(null);
+  const [kpiLoading, setKpiLoading] = useState(true);
+  const [inventoryAlertsTop, setInventoryAlertsTop] = useState<
+    { type: string; severity: string; message: string; action?: string }[]
+  >([]);
 
-  // Fetch customer count for today
-  useEffect(() => {
-    const today = formatDate(new Date());
-    fetch(`/api/customer-count?date=${today}`)
-      .then(r => r.json())
-      .then(d => { if (typeof d.total === "number") setCustomerCount(d.total); })
-      .catch((e) => console.warn("EingabePage fetch error:", e));
+  const refreshDashboardKpis = useCallback(async () => {
+    setKpiLoading(true);
+    try {
+      const [kpisRes, alertsRes] = await Promise.all([
+        fetch("/api/dashboard/kpis"),
+        fetch("/api/inventory/alerts"),
+      ]);
+      if (kpisRes.ok) {
+        const d = await kpisRes.json();
+        if (typeof d.todayCustomers === "number") setCustomerCount(d.todayCustomers);
+        setDashKpis({
+          todayRevenue: typeof d.todayRevenue === "number" ? d.todayRevenue : 0,
+          todayCustomers: typeof d.todayCustomers === "number" ? d.todayCustomers : 0,
+          netProfit: typeof d.netProfit === "number" ? d.netProfit : (d.costSnapshot?.netProfit ?? d.costSnapshot?.grossAfterCosts ?? 0),
+          todayWaste: typeof d.todayWaste === "number" ? d.todayWaste : 0,
+          kpiExplain: d.kpiExplain,
+        });
+      }
+      if (alertsRes.ok) {
+        const ad = await alertsRes.json();
+        const alerts = toArray<{ type: string; severity: string; message: string; action?: string }>(ad.alerts);
+        setInventoryAlertsTop(alerts.slice(0, 4));
+      }
+    } catch (e) {
+      console.warn("EingabePage KPI fetch error:", e);
+    } finally {
+      setKpiLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshDashboardKpis();
+  }, [refreshDashboardKpis]);
 
   const incrementCustomer = useCallback(async () => {
     setCustomerSaving(true);
@@ -140,53 +176,54 @@ export default function EingabePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date: today, hour, count: 1 }),
       });
-      if (res.ok) setCustomerCount(c => c + 1);
-    } catch (e) { console.warn("EingabePage error:", e); }
-    finally { setCustomerSaving(false); }
-  }, []);
-
-  // Fetch products
-  useEffect(() => {
-    async function fetchProducts() {
-      setLoadingProducts(true);
-      try {
-        const res = await fetch("/api/products");
-        if (!res.ok) throw new Error("Produkte konnten nicht geladen werden.");
-        const raw = await res.json();
-        const data: Product[] = Array.isArray(raw) ? raw : raw.items ?? [];
-        setProducts(data.filter((p: Product) => p.isActive !== false));
-      } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : t("common.loadFailed"));
-      } finally {
-        setLoadingProducts(false);
-      }
+      if (res.ok) await refreshDashboardKpis();
+    } catch (e) {
+      console.warn("EingabePage error:", e);
+    } finally {
+      setCustomerSaving(false);
     }
-    fetchProducts();
-  }, []);
+  }, [refreshDashboardKpis]);
 
-  // Fetch inventory when Inventar tab is active
+  useEffect(() => {
+    if (productsError) {
+      setErrorMessage(productsError);
+    }
+  }, [productsError]);
+
+  // Fetch ingredients when Inventar tab is active
   useEffect(() => {
     if (tab !== "Inventar") return;
-    async function fetchInventory() {
+    async function fetchIngredients() {
       setLoadingInventory(true);
       try {
-        const res = await fetch("/api/inventory");
-        if (!res.ok) throw new Error("Inventar konnte nicht geladen werden.");
-        const data = await res.json();
-        setInventory(data);
+        const qs = unitFilter !== "all" ? `?unit=${unitFilter}` : "";
+        const [ingRes, ledgerRes] = await Promise.all([
+          fetch(`/api/ingredients${qs}`),
+          fetch("/api/manager/inventory-ledger?limit=15"),
+        ]);
+        if (!ingRes.ok) throw new Error("Zutaten konnten nicht geladen werden.");
+        const data = toArray<IngredientRow>(await ingRes.json());
+        setIngredients(data);
         const edits: Record<string, string> = {};
-        data.forEach((inv: InventoryItem) => {
-          edits[inv.productId] = String(inv.quantity);
+        data.forEach((ing) => {
+          edits[ing.id] = String(ing.stockQty);
         });
-        setInventoryEdits(edits);
+        setIngredientEdits(edits);
+        if (ledgerRes.ok) {
+          const ledgerJson = await ledgerRes.json();
+          setLedgerEntries(Array.isArray(ledgerJson.entries) ? ledgerJson.entries : []);
+        }
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : t("common.loadFailed"));
       } finally {
         setLoadingInventory(false);
       }
     }
-    fetchInventory();
-  }, [tab]);
+    fetchIngredients();
+    const onChange = () => fetchIngredients();
+    window.addEventListener("manager-data-changed", onChange);
+    return () => window.removeEventListener("manager-data-changed", onChange);
+  }, [tab, unitFilter, t]);
 
   // Load yesterday's sales for "Wie gestern"
   const loadYesterdaySales = useCallback(async () => {
@@ -198,7 +235,7 @@ export default function EingabePage() {
       const res = await fetch(`/api/sales?date=${dateStr}`);
       if (!res.ok) throw new Error("Gestern konnten nicht geladen werden.");
       const salesRaw = await res.json();
-      const sales: SalesEntry[] = Array.isArray(salesRaw) ? salesRaw : salesRaw.items ?? [];
+      const sales = toArray<SalesEntry>(salesRaw);
       const qty: Record<string, number> = {};
       sales.forEach((s) => {
         const pid = s.productId;
@@ -280,11 +317,12 @@ export default function EingabePage() {
       setSaveStatus("success");
       setQuantities({});
       setPlausibilityWarnings({});
+      void refreshDashboardKpis();
     } catch (err) {
       setSaveStatus("error");
       setErrorMessage(err instanceof Error ? err.message : t("common.saveFailed"));
     }
-  }, [products, quantities, salesDate]);
+  }, [products, quantities, salesDate, t, refreshDashboardKpis]);
 
   // Save inventory updates
   const saveInventory = useCallback(async () => {
@@ -318,7 +356,8 @@ export default function EingabePage() {
         }
       }
       const res = await fetch("/api/inventory");
-      const data = await res.json();
+      const raw = await res.json();
+      const data = toArray<InventoryItem>(raw);
       setInventory(data);
       setInventoryEdits(
         data.reduce((acc: Record<string, string>, inv: InventoryItem) => {
@@ -326,44 +365,179 @@ export default function EingabePage() {
           return acc;
         }, {})
       );
+      void refreshDashboardKpis();
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : t("common.error"));
     } finally {
       setInventorySaving(false);
     }
-  }, [inventory, inventoryEdits]);
+  }, [inventory, inventoryEdits, t, refreshDashboardKpis]);
 
-  // Save waste
-  const saveWaste = useCallback(async () => {
+  const saveIngredients = useCallback(async () => {
+    const toUpdate = Object.entries(ingredientEdits).filter(([id, val]) => {
+      const ing = ingredients.find((i) => i.id === id);
+      if (!ing) return false;
+      const parsed = parseFloat(val);
+      return !isNaN(parsed) && parsed !== ing.stockQty;
+    });
+
+    if (toUpdate.length === 0) {
+      setErrorMessage("Keine Änderungen zum Speichern.");
+      return;
+    }
+
+    setIngredientSaving(true);
+    setErrorMessage("");
+    try {
+      for (const [id, val] of toUpdate) {
+        const res = await fetch(`/api/ingredients/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stockQty: parseFloat(val) }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error ?? "Bestand konnte nicht gespeichert werden");
+        }
+      }
+      const qs = unitFilter !== "all" ? `?unit=${unitFilter}` : "";
+      const res = await fetch(`/api/ingredients${qs}`);
+      const data = toArray<IngredientRow>(await res.json());
+      setIngredients(data);
+      setIngredientEdits(
+        data.reduce((acc: Record<string, string>, ing) => {
+          acc[ing.id] = String(ing.stockQty);
+          return acc;
+        }, {})
+      );
+      void refreshDashboardKpis();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : t("common.error"));
+    } finally {
+      setIngredientSaving(false);
+    }
+  }, [ingredientEdits, ingredients, unitFilter, t, refreshDashboardKpis]);
+
+  const addIngredient = useCallback(async () => {
+    const name = newIngName.trim();
+    const stockQty = parseFloat(newIngStock);
+    if (!name) {
+      setErrorMessage(t("eingabe.ingredientName"));
+      return;
+    }
+    if (isNaN(stockQty) || stockQty < 0) {
+      setErrorMessage(t("eingabe.ingredientStock"));
+      return;
+    }
+    setAddingIngredient(true);
+    setErrorMessage("");
+    try {
+      const res = await fetch("/api/ingredients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          unit: newIngUnit,
+          stockQty,
+          costPerUnit: parseFloat(newIngCost) || 0,
+          minStock: newIngMin.trim() ? parseFloat(newIngMin) : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? t("common.saveFailed"));
+      setNewIngName("");
+      setNewIngStock("");
+      setNewIngCost("");
+      setNewIngMin("");
+      const qs = unitFilter !== "all" ? `?unit=${unitFilter}` : "";
+      const listRes = await fetch(`/api/ingredients${qs}`);
+      const list = toArray<IngredientRow>(await listRes.json());
+      setIngredients(list);
+      setIngredientEdits(
+        list.reduce((acc: Record<string, string>, ing) => {
+          acc[ing.id] = String(ing.stockQty);
+          return acc;
+        }, {})
+      );
+      void refreshDashboardKpis();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : t("common.error"));
+    } finally {
+      setAddingIngredient(false);
+    }
+  }, [
+    newIngName,
+    newIngUnit,
+    newIngStock,
+    newIngCost,
+    newIngMin,
+    unitFilter,
+    t,
+    refreshDashboardKpis,
+  ]);
+
+  const addWasteDraft = useCallback(() => {
     if (!wasteProductId || wasteQuantity <= 0) {
       setErrorMessage("Produkt und Menge erforderlich.");
       return;
     }
+    if (wasteQuantity > 1000) {
+      setErrorMessage("Menge ist zu hoch. Bitte realistischen Wert eintragen.");
+      return;
+    }
+    const prod = products.find((p) => p.id === wasteProductId);
+    const reason = wasteNotes.trim() ? `${wasteReason}: ${wasteNotes.trim()}` : wasteReason;
+    setWasteDrafts((prev) => [
+      ...prev,
+      {
+        productId: wasteProductId,
+        productName: prod?.name ?? "Unbekannt",
+        quantity: wasteQuantity,
+        reason,
+      },
+    ]);
+    setWasteProductId("");
+    setWasteQuantity(0);
+    setWasteNotes("");
+    setErrorMessage("");
+  }, [wasteProductId, wasteQuantity, wasteReason, wasteNotes, products]);
 
+  // Save waste
+  const saveWasteDrafts = useCallback(async () => {
+    if (wasteDrafts.length === 0) return;
     setWasteSaving(true);
     setErrorMessage("");
+    const failed: typeof wasteDrafts = [];
     try {
-      const res = await fetch("/api/waste", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productId: wasteProductId,
-          quantity: wasteQuantity,
-          reason: wasteNotes.trim() ? `${wasteReason}: ${wasteNotes}` : wasteReason,
-          date: formatDate(new Date()),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Fehler beim Erfassen");
-      setWasteProductId("");
-      setWasteQuantity(0);
-      setWasteNotes("");
+      for (const item of wasteDrafts) {
+        const res = await fetch("/api/waste", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            productId: item.productId,
+            quantity: item.quantity,
+            reason: item.reason,
+            date: formatDate(new Date()),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          failed.push(item);
+          console.warn("Waste save failed:", data?.error);
+        }
+      }
+      setWasteDrafts(failed);
+      if (failed.length > 0) {
+        setErrorMessage(`${failed.length} Waste-Eintraege konnten nicht gespeichert werden.`);
+      } else {
+        void refreshDashboardKpis();
+      }
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : t("common.error"));
     } finally {
       setWasteSaving(false);
     }
-  }, [wasteProductId, wasteQuantity, wasteReason, wasteNotes]);
+  }, [wasteDrafts, t, refreshDashboardKpis]);
 
   // Save quick note
   const saveQuickNote = useCallback(async () => {
@@ -428,29 +602,95 @@ export default function EingabePage() {
     return exp.toDateString() <= tomorrow.toDateString();
   };
 
+  const netCol = (n: number) =>
+    n < 0 ? "var(--color-accent-stress)" : n === 0 ? "var(--color-text-secondary)" : "var(--color-accent-profit)";
+
   return (
     <div className="space-y-4 pb-8">
       <h1 className="font-heading text-2xl font-semibold text-text-primary dark:text-dark-text">
-        {t("nav.dataEntry")}
+        {t("eingabe.title")}
       </h1>
 
-      {/* Customer Counter */}
-      <div className="card flex items-center justify-between">
-        <div>
-          <p className="text-meta">{t("eingabe.customerCount")}</p>
-          <p className="text-card-title text-number" style={{ color: "var(--color-accent-profit)" }}>{customerCount}</p>
+      <p className="text-xs text-text-secondary dark:text-dark-text-secondary -mt-2">{t("eingabe.kpiHeaderHint")}</p>
+
+      {kpiLoading && !dashKpis ? (
+        <div className="grid grid-cols-3 gap-2">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-20 w-full rounded-xl" />
+          ))}
         </div>
-        <button
-          type="button"
-          onClick={incrementCustomer}
-          disabled={customerSaving}
-          className="flex h-14 w-14 items-center justify-center rounded-full text-2xl font-bold text-white transition-colors"
-          style={{ backgroundColor: "var(--color-accent-primary)" }}
-          aria-label="Kunde zaehlen"
-        >
-          +1
-        </button>
-      </div>
+      ) : dashKpis ? (
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-xl border border-text-secondary/10 bg-card p-3 text-center dark:border-dark-text-secondary/10 dark:bg-dark-card">
+            <TrendingUp size={14} className="mx-auto mb-1" style={{ color: "var(--color-accent-profit)" }} />
+            <p className="text-lg font-semibold text-number" style={{ color: "var(--color-accent-profit)" }}>
+              {Math.round(dashKpis.todayRevenue)}
+            </p>
+            <p className="text-[10px] text-text-secondary dark:text-dark-text-secondary">{t("common.revenue")}</p>
+          </div>
+          <div className="rounded-xl border border-text-secondary/10 bg-card p-3 text-center dark:border-dark-text-secondary/10 dark:bg-dark-card">
+            <Users size={14} className="mx-auto mb-1" style={{ color: "var(--color-accent-primary)" }} />
+            <p className="text-lg font-semibold text-number" style={{ color: "var(--color-accent-primary)" }}>
+              {dashKpis.todayCustomers}
+            </p>
+            <p className="text-[10px] text-text-secondary dark:text-dark-text-secondary">{t("home.customers")}</p>
+          </div>
+          <div className="rounded-xl border border-text-secondary/10 bg-card p-3 text-center dark:border-dark-text-secondary/10 dark:bg-dark-card">
+            <Wallet size={14} className="mx-auto mb-1" style={{ color: netCol(dashKpis.netProfit) }} />
+            <p className="text-lg font-semibold text-number" style={{ color: netCol(dashKpis.netProfit) }}>
+              {dashKpis.netProfit.toFixed(0)}
+            </p>
+            <p className="text-[10px] text-text-secondary dark:text-dark-text-secondary">{t("home.netProfitToday")}</p>
+          </div>
+        </div>
+      ) : null}
+
+      {inventoryAlertsTop.length > 0 && (
+        <div className="rounded-xl border-l-4 p-3" style={{ borderColor: "var(--color-accent-warning)", backgroundColor: "var(--color-card-bg)" }}>
+          <div className="mb-1 flex items-center gap-2">
+            <AlertTriangle size={14} style={{ color: "var(--color-accent-warning)" }} />
+            <p className="text-sm font-medium">{t("eingabe.stockRisks")}</p>
+          </div>
+          <ul className="space-y-1 text-xs text-text-secondary dark:text-dark-text-secondary">
+            {inventoryAlertsTop.map((a, i) => (
+              <li key={i} className="flex gap-2">
+                <Package size={12} className="mt-0.5 shrink-0" style={{ color: a.severity === "high" ? "var(--color-accent-warning)" : "var(--color-accent-waste)" }} />
+                <span>{a.message}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {dashKpis?.kpiExplain && (
+        <div className="space-y-2 rounded-xl p-3 text-xs" style={{ backgroundColor: "var(--color-track-bg)" }}>
+          <p className="text-sm font-medium text-text-primary dark:text-dark-text-primary">{t("eingabe.dataProvenance")}</p>
+          <p className="text-text-secondary dark:text-dark-text-secondary">{t("eingabe.dataProvenanceBody")}</p>
+          {dashKpis.kpiExplain.customers && (
+            <div>
+              <p className="font-medium">{t("home.howCustomersCalculated")}</p>
+              <p className="text-text-secondary dark:text-dark-text-secondary">{dashKpis.kpiExplain.customers.formula}</p>
+            </div>
+          )}
+          {dashKpis.kpiExplain.netProfit && (
+            <div>
+              <p className="font-medium">{t("home.howNetProfitCalculated")}</p>
+              <p className="text-text-secondary dark:text-dark-text-secondary">{dashKpis.kpiExplain.netProfit.formula}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Customer Counter */}
+      <CustomerCounter
+        customerCount={customerCount}
+        customerSaving={customerSaving}
+        title={t("eingabe.customerCount")}
+        incrementAriaLabel={t("common.add")}
+        onIncrement={() => {
+          void incrementCustomer();
+        }}
+      />
 
       {/* Tabs */}
       <div
@@ -649,49 +889,126 @@ export default function EingabePage() {
 
       {tab === "Inventar" && (
         <div role="tabpanel" aria-labelledby="tab-inventar" className="space-y-4">
+          <div
+            role="group"
+            aria-label={t("eingabe.unitFilter")}
+            className="flex flex-wrap gap-2"
+          >
+            {(["all", "g", "ml", "l", "stk"] as const).map((u) => (
+              <button
+                key={u}
+                type="button"
+                onClick={() => setUnitFilter(u)}
+                className={`min-h-[40px] rounded-lg px-3 text-sm font-medium transition-colors ${
+                  unitFilter === u
+                    ? "bg-accent text-white"
+                    : "border border-text-secondary/20 text-text-secondary dark:text-dark-text-secondary"
+                }`}
+              >
+                {u === "all" ? t("common.all") : u}
+              </button>
+            ))}
+          </div>
+
+          <div className="rounded-lg border border-text-secondary/15 p-4 space-y-3 dark:border-dark-text-secondary/15">
+            <p className="text-sm font-medium">{t("eingabe.addIngredient")}</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                type="text"
+                value={newIngName}
+                onChange={(e) => setNewIngName(e.target.value)}
+                placeholder={t("eingabe.ingredientName")}
+                className="input-field min-h-[44px]"
+              />
+              <select
+                value={newIngUnit}
+                onChange={(e) => setNewIngUnit(e.target.value as "g" | "ml" | "l" | "stk")}
+                className="input-field min-h-[44px]"
+                aria-label={t("eingabe.ingredientUnit")}
+              >
+                <option value="g">g</option>
+                <option value="ml">ml</option>
+                <option value="l">l</option>
+                <option value="stk">stk</option>
+              </select>
+              <input
+                type="number"
+                min={0}
+                step="0.1"
+                value={newIngStock}
+                onChange={(e) => setNewIngStock(e.target.value)}
+                placeholder={t("eingabe.ingredientStock")}
+                className="input-field min-h-[44px]"
+              />
+              <input
+                type="number"
+                min={0}
+                step="0.001"
+                value={newIngCost}
+                onChange={(e) => setNewIngCost(e.target.value)}
+                placeholder={t("eingabe.ingredientCost")}
+                className="input-field min-h-[44px]"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={addIngredient}
+              disabled={addingIngredient}
+              className="btn-primary w-full min-h-[48px]"
+            >
+              {addingIngredient ? t("common.loading") : t("eingabe.addIngredient")}
+            </button>
+          </div>
+
           {loadingInventory ? (
             <div className="space-y-3">
               {[1, 2, 3, 4, 5].map((i) => (
                 <Skeleton key={i} className="h-16 w-full" />
               ))}
             </div>
+          ) : ingredients.length === 0 ? (
+            <p className="text-meta">{t("common.noData")}</p>
           ) : (
             <>
+              <p className="text-sm font-medium text-text-secondary dark:text-dark-text-secondary">
+                {t("eingabe.ingredients")}
+              </p>
               <div className="space-y-2">
-                {inventory.map((inv) => {
-                  const expiring = isExpiringSoon(inv.expiresAt);
+                {ingredients.map((ing) => {
+                  const low =
+                    ing.minStock != null &&
+                    parseFloat(ingredientEdits[ing.id] ?? String(ing.stockQty)) < ing.minStock;
                   return (
                     <div
-                      key={inv.id}
+                      key={ing.id}
                       className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 ${
-                        expiring
+                        low
                           ? "border-waste/50 bg-waste/5"
                           : "border-text-secondary/10 bg-card dark:border-dark-text-secondary/10 dark:bg-dark-card"
                       }`}
                     >
                       <div>
-                        <span className="font-medium">{inv.product.name}</span>
-                        {inv.expiresAt && (
-                          <p
-                            className={`text-xs ${expiring ? "text-waste font-medium" : "text-text-secondary dark:text-dark-text-secondary"}`}
-                          >
-                            Ablauf: {formatDateDisplay(new Date(inv.expiresAt))}
-                          </p>
-                        )}
+                        <span className="font-medium">{ing.name}</span>
+                        <p className="text-xs text-text-secondary dark:text-dark-text-secondary">
+                          {ing.unit}
+                          {ing.minStock != null
+                            ? ` · ${t("eingabe.minStock")}: ${ing.minStock}`
+                            : ""}
+                        </p>
                       </div>
                       <input
                         type="number"
                         min={0}
                         step="0.1"
-                        value={inventoryEdits[inv.productId] ?? ""}
+                        value={ingredientEdits[ing.id] ?? ""}
                         onChange={(e) =>
-                          setInventoryEdits((prev) => ({
+                          setIngredientEdits((prev) => ({
                             ...prev,
-                            [inv.productId]: e.target.value,
+                            [ing.id]: e.target.value,
                           }))
                         }
-                        className="h-12 w-24 rounded-lg border border-text-secondary/20 bg-background px-2 text-center focus:outline-none focus:ring-2 focus:ring-accent dark:bg-dark-bg"
-                        aria-label={`${inv.product.name} Bestand ändern`}
+                        className="h-12 w-28 rounded-lg border border-text-secondary/20 bg-background px-2 text-center focus:outline-none focus:ring-2 focus:ring-accent dark:bg-dark-bg"
+                        aria-label={`${ing.name} Bestand (${ing.unit})`}
                       />
                     </div>
                   );
@@ -699,12 +1016,43 @@ export default function EingabePage() {
               </div>
               <button
                 type="button"
-                onClick={saveInventory}
-                disabled={inventorySaving}
+                onClick={saveIngredients}
+                disabled={ingredientSaving}
                 className="btn-primary w-full min-h-[52px]"
               >
-                {inventorySaving ? t("common.update") + "…" : t("common.save")}
+                {ingredientSaving ? t("common.update") + "…" : t("common.save")}
               </button>
+
+              {ledgerEntries.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  <p className="text-sm font-medium text-text-secondary dark:text-dark-text-secondary">
+                    {t("eingabe.ledgerHistory")}
+                  </p>
+                  {ledgerEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="rounded-lg border border-text-secondary/10 px-3 py-2 text-sm dark:border-dark-text-secondary/10"
+                    >
+                      <div className="flex justify-between gap-2">
+                        <span className="font-medium">{entry.ingredientName}</span>
+                        <span className="text-number">
+                          {entry.deltaQty > 0 ? "+" : ""}
+                          {entry.deltaQty} {entry.unit}
+                        </span>
+                      </div>
+                      <p className="text-meta text-xs mt-0.5">
+                        {entry.reason === "sale" && entry.productName
+                          ? `Verkauf: ${entry.productName}`
+                          : entry.reason}
+                        {" · "}
+                        {new Date(entry.createdAt).toLocaleString("de-DE")}
+                        {" · "}
+                        {entry.balanceAfter} {entry.unit}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -722,8 +1070,9 @@ export default function EingabePage() {
               onChange={(e) => setWasteProductId(e.target.value)}
               className="input-field min-h-[44px]"
               aria-label="Produkt für Verschwendung auswählen"
+              disabled={loadingProducts || products.length === 0}
             >
-              <option value="">— Auswählen —</option>
+              <option value="">{t("common.selectPlaceholder")}</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -779,51 +1128,68 @@ export default function EingabePage() {
           </div>
           <button
             type="button"
-            onClick={saveWaste}
-            disabled={wasteSaving || !wasteProductId || wasteQuantity <= 0}
+            onClick={addWasteDraft}
+            disabled={loadingProducts || products.length === 0 || !wasteProductId || wasteQuantity <= 0}
             className="btn-primary w-full min-h-[52px]"
           >
-            {wasteSaving ? t("common.save") + "…" : t("eingabe.wasteEntry")}
+            Zur Liste hinzufuegen
           </button>
+          {!loadingProducts && products.length === 0 && (
+            <p className="text-sm text-text-secondary dark:text-dark-text-secondary">
+              Keine aktiven Produkte verfügbar. Bitte zuerst Produkte in Einstellungen anlegen.
+            </p>
+          )}
+
+          {wasteDrafts.length > 0 && (
+            <div className="card space-y-2">
+              <p className="text-meta font-semibold uppercase tracking-wide">
+                Unspeicherte Waste-Eintraege ({wasteDrafts.length})
+              </p>
+              {wasteDrafts.map((entry, idx) => (
+                <div key={`${entry.productId}-${idx}`} className="flex items-center justify-between rounded-[var(--radius-button)] p-3 bg-[var(--color-track-bg)]">
+                  <div>
+                    <p className="text-sm font-medium">{entry.productName}</p>
+                    <p className="text-meta">{entry.quantity}x &middot; {entry.reason}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-ghost text-[var(--color-accent-warning)]"
+                    onClick={() => setWasteDrafts((prev) => prev.filter((_, i) => i !== idx))}
+                  >
+                    Entfernen
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => { void saveWasteDrafts(); }}
+                disabled={wasteSaving}
+                className="btn-secondary w-full min-h-[44px]"
+              >
+                {wasteSaving ? "Speichert..." : "Waste-Liste speichern"}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
       {/* Quick Notes - always visible */}
-      <section className="mt-8 rounded-lg border border-text-secondary/10 bg-card p-4 dark:border-dark-text-secondary/10 dark:bg-dark-card">
-        <h2 className="mb-2 font-medium text-text-primary dark:text-dark-text">
-          Schnellnotiz
-        </h2>
-        <div className="flex gap-2">
-          <select
-            value={quickNoteCategory}
-            onChange={(e) => setQuickNoteCategory(e.target.value)}
-            className="input-field min-h-[44px] w-32 shrink-0"
-            aria-label="Notiz-Kategorie"
-          >
-            {QUICK_NOTE_CATEGORIES.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-          <input
-            type="text"
-            value={quickNoteText}
-            onChange={(e) => setQuickNoteText(e.target.value)}
-            placeholder="Notiz eingeben…"
-            className="input-field min-h-[44px] flex-1"
-            aria-label="Schnellnotiz"
-          />
-        </div>
-        <button
-          type="button"
-          onClick={saveQuickNote}
-          disabled={quickNoteSaving || !quickNoteText.trim()}
-          className="btn-secondary mt-2 min-h-[44px] w-full"
-        >
-          {quickNoteSaving ? "Speichern…" : "Notiz speichern"}
-        </button>
-      </section>
+      <QuickNoteSection
+        quickNoteCategory={quickNoteCategory}
+        quickNoteText={quickNoteText}
+        quickNoteSaving={quickNoteSaving}
+        title={t("common.notes")}
+        categoryAriaLabel={t("common.category")}
+        inputAriaLabel={t("common.notes")}
+        inputPlaceholder={t("common.notes")}
+        saveLabel={t("common.save")}
+        savingLabel={t("common.loading")}
+        onCategoryChange={setQuickNoteCategory}
+        onTextChange={setQuickNoteText}
+        onSave={() => {
+          void saveQuickNote();
+        }}
+      />
 
       {errorMessage && (
         <div

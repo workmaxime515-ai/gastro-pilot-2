@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "@/i18n";
+import { useProducts } from "@/hooks/useProducts";
+import { toArray } from "@/lib/api-helpers";
+import { DemoSection } from "@/app/einstellungen/components/DemoSection";
+import type {
+  Product as DomainProduct,
+  EmergencyContact as DomainEmergencyContact,
+} from "@/types/domain";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -18,22 +25,17 @@ interface ShopSettings {
   fontSize: string;
 }
 
-interface Product {
-  id: string;
-  name: string;
+type Product = DomainProduct & {
   category: string;
   costPrice: number;
   sellPrice: number;
   spoilageHours: number;
   isActive: boolean;
-}
+};
 
-interface EmergencyContact {
-  id: string;
-  name: string;
-  role: string;
-  phone: string;
-}
+type EmergencyContact = DomainEmergencyContact;
+
+type DemoType = "quick" | "full";
 
 const STRATEGY_MODES = [
   { id: "balanced" as const, name: "Balanced", desc: "Ausgewogene Empfehlungen" },
@@ -60,6 +62,7 @@ const ROLE_OPTIONS = [
 ];
 
 const APP_VERSION = "0.1.0";
+const DEMO_FEATURE_ENABLED = process.env.NEXT_PUBLIC_ENABLE_DEMO_SEED !== "false";
 
 // ─── Skeleton ─────────────────────────────────────────────────
 
@@ -95,7 +98,12 @@ function SettingsSkeleton() {
 export default function EinstellungenPage() {
   const { t, setLocale } = useT();
   const [settings, setSettings] = useState<ShopSettings | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
+  const {
+    products: rawProducts,
+    error: productsError,
+    refresh: refreshProducts,
+  } = useProducts();
+  const products = rawProducts as Product[];
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -106,6 +114,12 @@ export default function EinstellungenPage() {
   const [highContrast, setHighContrast] = useState(false);
   const [largeText, setLargeText] = useState(false);
   const [language, setLanguage] = useState<string>("de");
+  const [demoEnabled, setDemoEnabled] = useState(false);
+  const [demoType, setDemoType] = useState<DemoType>("quick");
+  const [seedText, setSeedText] = useState("");
+  const [demoSeedStatus, setDemoSeedStatus] = useState<"idle" | "success" | "error">("idle");
+  const [demoSeedMessage, setDemoSeedMessage] = useState<string | null>(null);
+  const [demoSeedLastUpdated, setDemoSeedLastUpdated] = useState<string | null>(null);
 
   // Product form
   const [showProductForm, setShowProductForm] = useState(false);
@@ -116,21 +130,18 @@ export default function EinstellungenPage() {
   // Fetch data
   const fetchData = useCallback(async () => {
     try {
-      const [settingsRes, productsRes, contactsRes] = await Promise.all([
+      const [settingsRes, contactsRes] = await Promise.all([
         fetch("/api/settings"),
-        fetch("/api/products"),
         fetch("/api/emergency-contacts"),
       ]);
 
-      const [settingsJson, productsJson, contactsJson] = await Promise.all([
+      const [settingsJson, contactsJson] = await Promise.all([
         settingsRes.json(),
-        productsRes.json(),
         contactsRes.json(),
       ]);
 
       if (settingsRes.ok) setSettings(settingsJson);
-      if (productsRes.ok) setProducts(Array.isArray(productsJson) ? productsJson : productsJson.items ?? []);
-      if (contactsRes.ok) setContacts(Array.isArray(contactsJson) ? contactsJson : contactsJson.items ?? []);
+      if (contactsRes.ok) setContacts(toArray<EmergencyContact>(contactsJson));
     } catch (e) {
       console.error(e);
     } finally {
@@ -142,6 +153,12 @@ export default function EinstellungenPage() {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    if (productsError) {
+      console.error(productsError);
+    }
+  }, [productsError]);
+
   // Load localStorage preferences
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -149,10 +166,20 @@ export default function EinstellungenPage() {
     const storedContrast = localStorage.getItem("gastro-high-contrast") === "true";
     const storedLargeText = localStorage.getItem("gastro-large-text") === "true";
     const storedLang = localStorage.getItem("gastro-language") || "de";
+    const storedDemoEnabled = localStorage.getItem("gastro-demo-enabled") === "true";
+    const storedDemoType = localStorage.getItem("gastro-demo-type");
+    const storedSeedText = localStorage.getItem("gastro-demo-seed-text") || "";
+    const storedSeedUpdated = localStorage.getItem("gastro-demo-last-updated");
     if (storedDark) setDarkMode(storedDark);
     if (storedContrast) setHighContrast(storedContrast);
     if (storedLargeText) setLargeText(storedLargeText);
     if (storedLang) setLanguage(storedLang);
+    setDemoEnabled(storedDemoEnabled);
+    setSeedText(storedSeedText);
+    if (storedSeedUpdated) setDemoSeedLastUpdated(storedSeedUpdated);
+    if (storedDemoType === "quick" || storedDemoType === "full") {
+      setDemoType(storedDemoType);
+    }
   }, []);
 
   // Apply dark mode to html element
@@ -235,7 +262,7 @@ export default function EinstellungenPage() {
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error((await res.json()).error);
-      await fetchData();
+      await refreshProducts();
       setShowProductForm(false);
       setEditingProduct(null);
       showSaved("Produkte");
@@ -255,7 +282,7 @@ export default function EinstellungenPage() {
         body: JSON.stringify({ id: p.id, isActive: !p.isActive }),
       });
       if (!res.ok) throw new Error((await res.json()).error);
-      await fetchData();
+      await refreshProducts();
       showSaved("Produkte");
     } catch (e) {
       console.error(e);
@@ -315,15 +342,64 @@ export default function EinstellungenPage() {
     }
   };
 
-  const resetDemoData = async () => {
-    if (!confirm("Alle Demo-Daten werden zurückgesetzt. Fortfahren?")) return;
+  const runDemoSeed = async (nextMode: DemoType = demoType, nextSeedText: string = seedText) => {
     setSaving("demo");
+    setDemoSeedStatus("idle");
+    setDemoSeedMessage(null);
     try {
-      const res = await fetch("/api/seed", { method: "POST" });
-      if (!res.ok) throw new Error((await res.json()).error);
+      const res = await fetch("/api/seed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: nextMode, seedText: nextSeedText.trim() || undefined }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((json as { error?: string }).error ?? "Demo-Seed fehlgeschlagen.");
       await fetchData();
+      await refreshProducts();
+      const nowIso = (json as { seededAt?: string }).seededAt ?? new Date().toISOString();
+      localStorage.setItem("gastro-demo-last-updated", nowIso);
+      setDemoSeedLastUpdated(nowIso);
+      setDemoSeedStatus("success");
+      setDemoSeedMessage("Demo-Daten erfolgreich aktualisiert.");
       showSaved("Demo");
     } catch (e) {
+      const message = e instanceof Error ? e.message : "Demo-Seed fehlgeschlagen.";
+      setDemoSeedStatus("error");
+      setDemoSeedMessage(message);
+      console.error(e);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const resetDemoData = async () => {
+    if (
+      !confirm(
+        "Alle Verkaufs-, Inventar- und Finanzdaten werden gelöscht (leerer Start). Fortfahren?"
+      )
+    ) {
+      return;
+    }
+    setSaving("demo");
+    try {
+      const res = await fetch("/api/demo/reset", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((json as { error?: string }).error ?? "Reset fehlgeschlagen.");
+      }
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("gastro-demo-last-updated");
+        localStorage.setItem("gastro-demo-enabled", "false");
+      }
+      setDemoEnabled(false);
+      setDemoSeedStatus("success");
+      setDemoSeedMessage("Daten zurückgesetzt — leerer Start.");
+      showSaved("Demo");
+      window.location.reload();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Reset fehlgeschlagen.";
+      setDemoSeedStatus("error");
+      setDemoSeedMessage(message);
       console.error(e);
     } finally {
       setSaving(null);
@@ -341,6 +417,23 @@ export default function EinstellungenPage() {
       setLocale(value as "de" | "en" | "tr" | "ar" | "fr" | "it" | "es" | "pl" | "zh" | "ja");
     }
     showSaved("Barrierefreiheit");
+  };
+
+  const setDemoPref = async (nextEnabled: boolean, nextType?: DemoType) => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("gastro-demo-enabled", String(nextEnabled));
+    setDemoEnabled(nextEnabled);
+    if (nextType) {
+      localStorage.setItem("gastro-demo-type", nextType);
+      setDemoType(nextType);
+    }
+    if (nextEnabled) {
+      await runDemoSeed(nextType ?? demoType, seedText);
+    } else {
+      setDemoSeedStatus("idle");
+      setDemoSeedMessage(null);
+    }
+    showSaved("Demo");
   };
 
   if (loading) {
@@ -458,10 +551,59 @@ export default function EinstellungenPage() {
         onLanguage={setLocalPref.bind(null, "gastro-language")}
       />
 
-      {/* 6. Backup & Restore */}
+      {/* 6. Demo */}
+      {DEMO_FEATURE_ENABLED ? (
+        <DemoSection
+          demoEnabled={demoEnabled}
+          demoType={demoType}
+          seedText={seedText}
+          loading={saving === "demo"}
+          status={demoSeedStatus}
+          statusMessage={demoSeedMessage}
+          lastUpdated={demoSeedLastUpdated}
+          onToggle={(enabled) => {
+            void setDemoPref(enabled);
+          }}
+          onType={(type) => {
+            void setDemoPref(demoEnabled, type);
+          }}
+          onSeedText={(value) => {
+            setSeedText(value);
+            localStorage.setItem("gastro-demo-seed-text", value);
+          }}
+          onRetry={() => {
+            void runDemoSeed();
+          }}
+        />
+      ) : (
+        <section className="space-y-3">
+          <h2 className="font-heading text-lg font-semibold text-text-primary dark:text-dark-text">
+            Demo-Modus
+          </h2>
+          <div className="card text-sm text-text-secondary dark:text-dark-text-secondary">
+            Demo-/Seed-Funktion ist per Feature-Flag deaktiviert.
+          </div>
+        </section>
+      )}
+
+      {/* 7. Backup & Restore */}
       <BackupSection />
 
-      {/* 7. Über diese App */}
+      <section className="space-y-3">
+        <h2 className="font-heading text-lg font-semibold text-text-primary dark:text-dark-text">
+          Chromebook
+        </h2>
+        <div className="card space-y-3">
+          <p className="text-sm text-text-secondary dark:text-dark-text-secondary">
+            Install pack (ZIP) for Chrome OS — icons, guide, launcher.
+          </p>
+          <a href="/install" className="btn-primary inline-flex items-center gap-2">
+            Download Chromebook pack
+          </a>
+        </div>
+      </section>
+
+      {/* 8. Über diese App */}
       <AboutSection
         version={APP_VERSION}
         saving={saving}
@@ -993,26 +1135,31 @@ function AccessibilitySection({
       </h2>
       <div className="card space-y-4">
         <div className="flex items-center justify-between">
-          <span className="text-text-primary dark:text-dark-text">Dark Mode</span>
+          <div>
+            <p className="text-text-primary dark:text-dark-text">{t("einstellungen.themeMode")}</p>
+            <p className="text-xs text-text-secondary dark:text-dark-text-secondary">
+              {t("einstellungen.themeModeHelp")}
+            </p>
+          </div>
           <select
             value={darkMode}
             onChange={(e) => onDarkMode(e.target.value as "light" | "dark" | "auto")}
             className="input-field w-auto"
-            aria-label="Dark Mode"
+            aria-label={t("einstellungen.themeMode")}
           >
-            <option value="auto">System</option>
-            <option value="light">Hell</option>
-            <option value="dark">Dunkel</option>
+            <option value="auto">{t("einstellungen.themeAuto")}</option>
+            <option value="light">{t("einstellungen.themeLight")}</option>
+            <option value="dark">{t("einstellungen.themeDark")}</option>
           </select>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-text-primary dark:text-dark-text">Hoher Kontrast</span>
+          <span className="text-text-primary dark:text-dark-text">{t("einstellungen.highContrast")}</span>
           <button
             type="button"
             onClick={() => onHighContrast(!highContrast)}
             role="switch"
             aria-checked={highContrast}
-            aria-label="Hoher Kontrast"
+            aria-label={t("einstellungen.highContrast")}
             className={`relative h-8 w-12 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent ${
               highContrast ? "bg-accent" : "bg-text-secondary/30"
             }`}
@@ -1025,13 +1172,13 @@ function AccessibilitySection({
           </button>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-text-primary dark:text-dark-text">Große Schrift</span>
+          <span className="text-text-primary dark:text-dark-text">{t("einstellungen.textSize")}</span>
           <button
             type="button"
             onClick={() => onLargeText(!largeText)}
             role="switch"
             aria-checked={largeText}
-            aria-label="Große Schrift"
+            aria-label={t("einstellungen.textSize")}
             className={`relative h-8 w-12 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent ${
               largeText ? "bg-accent" : "bg-text-secondary/30"
             }`}
